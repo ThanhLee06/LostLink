@@ -1,15 +1,17 @@
-# Gradle files
+# Gradle
 .gradle/
+.gradle-user/
 build/
 .kotlin/
 
-# Local configuration file (sdk path, etc)
+# Cấu hình cục bộ (đường dẫn Android SDK, v.v.)
 local.properties
 
-# Log/OS Files
+# Tệp log và hệ điều hành
 *.log
+.DS_Store
 
-# Android Studio generated files and folders
+# Tệp do Android Studio/Android tạo
 captures/
 .externalNativeBuild/
 .cxx/
@@ -17,18 +19,18 @@ captures/
 *.apk
 output-metadata.json
 
-# IntelliJ
+# IntelliJ/Android Studio
 *.iml
 .idea/
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
+# Khóa ký ứng dụng
 *.jks
 *.keystore
 
-# Google Services (e.g. APIs or Firebase)
+# Cấu hình dịch vụ/API cục bộ
 google-services.json
 
 # Android Profiling
