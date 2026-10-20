@@ -34,7 +34,7 @@ Mất đồ trong trường là chuyện thường gặp, nhưng thông tin thư
 ## Thiết kế
 
 - Figma: [LostLink](https://www.figma.com/design/6hJItuc71SoK6oubOe7NBH/LostLink)
-- Ảnh thiết kế trong repository: `docs/Design/Screens/LostLink.png`
+- Ảnh thiết kế trong repository: `docs/Design/Screens/LostLinkFigma.jpg`
 
 ## Cài đặt và chạy
 
