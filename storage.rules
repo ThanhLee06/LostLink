@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Cloudinary is used for storing image files to avoid the Firebase Blaze plan.
+    // Image URLs (Cloudinary HTTPS URLs) are saved in Firestore post documents.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,7 +1,34 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Keep the project buildable before a team member adds the Firebase Console config.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
+val cloudinaryProperties = Properties()
+val cloudinaryPropertiesFile = rootProject.file("cloudinary.properties")
+if (cloudinaryPropertiesFile.exists()) {
+    cloudinaryProperties.load(cloudinaryPropertiesFile.inputStream())
+}
+
+val cloudNameFromLocal = localProperties.getProperty("CLOUDINARY_CLOUD_NAME")?.trim()
+val cloudNameFromShared = cloudinaryProperties.getProperty("CLOUDINARY_CLOUD_NAME")?.trim()
+val cloudinaryCloudName = if (!cloudNameFromLocal.isNullOrEmpty()) cloudNameFromLocal else (cloudNameFromShared ?: "")
+
+val uploadPresetFromLocal = localProperties.getProperty("CLOUDINARY_UPLOAD_PRESET")?.trim()
+val uploadPresetFromShared = cloudinaryProperties.getProperty("CLOUDINARY_UPLOAD_PRESET")?.trim()
+val cloudinaryUploadPreset = if (!uploadPresetFromLocal.isNullOrEmpty()) uploadPresetFromLocal else (uploadPresetFromShared ?: "")
 
 android {
     namespace = "com.example.lostlink"
@@ -17,6 +44,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"$cloudinaryCloudName\"")
+        buildConfigField("String", "CLOUDINARY_UPLOAD_PRESET", "\"$cloudinaryUploadPreset\"")
     }
 
     buildTypes {
@@ -32,10 +62,16 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.coil.compose)
+    implementation(libs.okhttp)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

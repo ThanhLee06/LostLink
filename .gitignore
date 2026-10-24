@@ -30,8 +30,5 @@ render.experimental.xml
 *.jks
 *.keystore
 
-# Cấu hình dịch vụ/API cục bộ
-google-services.json
-
 # Android Profiling
 *.hprof

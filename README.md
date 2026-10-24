@@ -38,14 +38,27 @@ Mất đồ trong trường là chuyện thường gặp, nhưng thông tin thư
 
 ## Cài đặt và chạy
 
-### Yêu cầu
+### Chạy dự án sau khi clone
+
+1. Mở thư mục `LostLink` trong Android Studio và nhấn **Sync Project with Gradle Files**.
+2. Chọn thiết bị giả lập hoặc thiết bị thật và nhấn **Run** (dự án đã tích hợp sẵn `google-services.json` và cấu hình `cloudinary.properties` để build và chạy ngay).
+3. Trong ứng dụng, tiến hành **đăng ký tài khoản** bằng email `@ut.edu.vn` của chính mình, mở hộp thư nhấp link **xác minh email**, sau đó **đăng xuất và đăng nhập lại** để làm mới token truy cập.
+
+> **Lưu ý:** Quy tắc bảo mật Firebase Security Rules (`firestore.rules`) chỉ cần một đại diện trong nhóm deploy lên Firebase Console một lần duy nhất.
+
+### Tài liệu cấu hình chi tiết
+
+- Xem [docs/Firebase-Setup.md](docs/Firebase-Setup.md) để biết chi tiết cấu hình Firebase Authentication và Firestore.
+- Xem [docs/Cloudinary-Setup.md](docs/Cloudinary-Setup.md) để biết cơ chế upload ảnh qua Cloudinary.
+
+### Yêu cầu hệ thống
 
 - Android Studio có hỗ trợ Android Gradle Plugin 9.4.1
 - JDK 17 trở lên
 - Android SDK 37
 - Máy ảo hoặc điện thoại Android API 24 trở lên
 
-### Các bước thực hiện
+### Các bước thực hiện bằng dòng lệnh
 
 1. Clone repository:
 
@@ -54,11 +67,7 @@ Mất đồ trong trường là chuyện thường gặp, nhưng thông tin thư
    cd LostLink
    ```
 
-2. Mở thư mục dự án bằng Android Studio.
-3. Chờ Gradle đồng bộ và cài Android SDK 37 nếu Android Studio yêu cầu.
-4. Chọn thiết bị, sau đó nhấn **Run**.
-
-Có thể kiểm thử và tạo APK debug bằng dòng lệnh:
+2. Mở dự án trong Android Studio hoặc build/test từ CLI:
 
 ```powershell
 # Windows
