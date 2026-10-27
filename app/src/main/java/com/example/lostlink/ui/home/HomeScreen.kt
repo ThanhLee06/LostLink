@@ -78,6 +78,17 @@ fun HomeScreen(
             item(key = "auth") { FeedNotice("Đăng nhập để xem tin", "Dùng tài khoản @ut.edu.vn đã xác minh email.", "Đăng nhập", onSignIn) }
         } else {
             items(state.posts, key = { "post:${it.id}" }) { post -> PostCard(post) { onPost(post.id) } }
+            if (state.loading) item(key = "loading") {
+                Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(24.dp), color = Green, strokeWidth = 2.dp)
+                }
+            }
+            if (state.error != null) item(key = "error") {
+                FeedNotice("Chưa tải được tin", state.error, "Thử lại", onRefresh)
+            }
+            if (!state.loading && state.error == null && state.posts.isEmpty()) item(key = "empty") {
+                FeedNotice("Chưa có bài đăng", "Những tin mới sẽ xuất hiện tại đây.", "Làm mới", onRefresh)
+            }
             if (state.posts.isNotEmpty()) item(key = "more") {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (state.hasMore) {
@@ -86,6 +97,7 @@ fun HomeScreen(
                     } else if (!state.loading && state.error == null) {
                         Text("Đã xem hết tin", fontSize = 11.sp, color = Muted)
                     }
+                    TextButton(onClick = onRefresh, enabled = !state.loading) { Text("Làm mới", color = Green, fontSize = 12.sp) }
                 }
             }
         }

@@ -23,7 +23,7 @@ fun HomeRoute(model: HomeViewModel) {
         Scaffold(containerColor = PageBackground, contentWindowInsets = WindowInsets.statusBars,
             bottomBar = { BottomBar {} }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                HomeScreen(model.state, onPost = {}, onRefresh = {},
+                HomeScreen(model.state, onPost = {}, onRefresh = { model.load() },
                     onMore = { model.load(true) }, onSignIn = { signIn = true }, onReport = {})
             }
         }
