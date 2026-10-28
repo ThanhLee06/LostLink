@@ -1,6 +1,8 @@
 package com.example.lostlink.ui.auth
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,6 +69,7 @@ fun AuthScreen(
     var loading by remember { mutableStateOf(value = false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
+    var showResendVerificationButton by remember { mutableStateOf(value = false) }
     var showForgotPasswordDialog by remember { mutableStateOf(value = false) }
 
     // Google Sign-In Launcher (Account Picker)
@@ -88,7 +91,6 @@ fun AuthScreen(
 
             if (selectedEmail.isNotBlank() && !FirebaseAccountRepository.isAllowedEmail(selectedEmail)) {
                 errorMessage = "Vui lòng chọn tài khoản Google sinh viên có đuôi @ut.edu.vn ($selectedEmail)."
-                // Force clear cached Google and Firebase sessions so user can pick another account
                 accounts.signOut()
                 val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail().build()
                 GoogleSignIn.getClient(context, gso).signOut()
@@ -174,12 +176,48 @@ fun AuthScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = error,
-                            color = Color(0xFFE53E3E),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(12.dp),
-                        )
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = error,
+                                color = Color(0xFFE53E3E),
+                                fontSize = 12.sp,
+                            )
+
+                            if (showResendVerificationButton) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    TextButton(
+                                        onClick = { openGmailApp(context) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    ) {
+                                        Text("Mở Gmail ✉️", fontSize = 11.sp, color = GreenAccent, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    TextButton(
+                                        onClick = {
+                                            if (email.isNotBlank() && password.isNotBlank()) {
+                                                loading = true
+                                                accounts.sendVerificationEmailForAccount(email, password) { res ->
+                                                    loading = false
+                                                    res.onSuccess {
+                                                        Toast.makeText(context, "Đã gửi lại thư xác minh tới Gmail ($email)! Kiểm tra hộp thư của bạn.", Toast.LENGTH_LONG).show()
+                                                    }.onFailure { err ->
+                                                        Toast.makeText(context, err.localizedMessage ?: "Gửi thư thất bại.", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "Vui lòng nhập email và mật khẩu để gửi lại thư xác minh.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    ) {
+                                        Text("Gửi lại thư xác minh", fontSize = 11.sp, color = Color(0xFF191D2B), fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -190,12 +228,20 @@ fun AuthScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = msg,
-                            color = Color(0xFF137333),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(12.dp),
-                        )
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = msg,
+                                color = Color(0xFF137333),
+                                fontSize = 12.sp,
+                            )
+
+                            TextButton(
+                                onClick = { openGmailApp(context) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            ) {
+                                Text("Mở ứng dụng Gmail ✉️", fontSize = 12.sp, color = GreenAccent, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -203,7 +249,7 @@ fun AuthScreen(
                 AuthInputField(
                     label = "Email",
                     value = email,
-                    onValueChange = { email = it; errorMessage = null },
+                    onValueChange = { email = it; errorMessage = null; showResendVerificationButton = false },
                     placeholder = "Nhập email của bạn...",
                     icon = HomeIcon.PERSON,
                     keyboardType = KeyboardType.Email,
@@ -272,6 +318,7 @@ fun AuthScreen(
                     onClick = {
                         errorMessage = null
                         successMessage = null
+                        showResendVerificationButton = false
                         if (mode == AuthMode.LOGIN) {
                             if (email.isBlank() || password.isBlank()) {
                                 errorMessage = "Vui lòng nhập đầy đủ email và mật khẩu."
@@ -283,7 +330,14 @@ fun AuthScreen(
                                 result.onSuccess {
                                     onAuthSuccess()
                                 }.onFailure { err ->
-                                    errorMessage = err.localizedMessage ?: "Đăng nhập thất bại. Kiểm tra email, mật khẩu và xác minh email."
+                                    val msg = err.localizedMessage.orEmpty()
+                                    if (msg.contains("Verify your email") || msg.contains("xác minh")) {
+                                        errorMessage = "Tài khoản của bạn chưa được xác minh email. Vui lòng kiểm tra hộp thư Gmail ($email) và nhấp vào link xác nhận."
+                                        showResendVerificationButton = true
+                                    } else {
+                                        errorMessage = "Đăng nhập thất bại. Kiểm tra email, mật khẩu hoặc xác minh tài khoản."
+                                        showResendVerificationButton = false
+                                    }
                                 }
                             }
                         } else {
@@ -311,7 +365,7 @@ fun AuthScreen(
                             accounts.register(name, email, password) { result ->
                                 loading = false
                                 result.onSuccess {
-                                    successMessage = "Đăng ký thành công! Vui lòng kiểm tra hộp thư email @ut.edu.vn để xác minh tài khoản, sau đó đăng nhập."
+                                    successMessage = "Đã gửi thư xác minh tới Gmail ($email)! Vui lòng mở ứng dụng Gmail và nhấp vào link xác minh tài khoản trước khi đăng nhập."
                                     mode = AuthMode.LOGIN
                                     password = ""
                                     confirmPassword = ""
@@ -372,6 +426,7 @@ fun AuthScreen(
                 Surface(
                     onClick = {
                         errorMessage = null
+                        showResendVerificationButton = false
                         try {
                             val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
                             val defaultWebClientId = if (resId != 0) context.resources.getString(resId) else ""
@@ -384,7 +439,6 @@ fun AuthScreen(
                             }
 
                             val googleSignInClient = GoogleSignIn.getClient(context, gsoBuilder.build())
-                            // Clear previous session so Account Picker opens EVERY time!
                             googleSignInClient.signOut().addOnCompleteListener {
                                 googleSignInLauncher.launch(googleSignInClient.signInIntent)
                             }
@@ -444,6 +498,7 @@ fun AuthScreen(
                         modifier = Modifier.clickable {
                             errorMessage = null
                             successMessage = null
+                            showResendVerificationButton = false
                             mode = if (mode == AuthMode.LOGIN) AuthMode.REGISTER else AuthMode.LOGIN
                         },
                     )
@@ -506,6 +561,19 @@ fun AuthScreen(
                 }
             },
         )
+    }
+}
+
+private fun openGmailApp(context: Context) {
+    try {
+        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.gm")
+            ?: Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_EMAIL)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Không thể mở ứng dụng Gmail. Vui lòng tự mở ứng dụng Gmail trên điện thoại.", Toast.LENGTH_LONG).show()
     }
 }
 

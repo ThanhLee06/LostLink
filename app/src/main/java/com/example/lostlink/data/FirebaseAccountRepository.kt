@@ -72,6 +72,31 @@ class FirebaseAccountRepository(
             .addOnFailureListener { error -> onComplete(Result.failure(error)) }
     }
 
+    fun sendVerificationEmailForAccount(email: String, password: String, onComplete: (Result<Unit>) -> Unit) {
+        val cleanEmail = email.trim()
+        if (!isAllowedEmail(cleanEmail)) {
+            return onComplete(Result.failure(IllegalArgumentException("Vui lòng sử dụng địa chỉ email @ut.edu.vn.")))
+        }
+        auth.signInWithEmailAndPassword(cleanEmail, password)
+            .addOnSuccessListener { result ->
+                val user = result.user
+                if (user != null) {
+                    user.sendEmailVerification()
+                        .addOnSuccessListener {
+                            auth.signOut()
+                            onComplete(Result.success(Unit))
+                        }
+                        .addOnFailureListener { err ->
+                            auth.signOut()
+                            onComplete(Result.failure(err))
+                        }
+                } else {
+                    onComplete(Result.failure(IllegalStateException("Không thể gửi lại email xác minh.")))
+                }
+            }
+            .addOnFailureListener { err -> onComplete(Result.failure(err)) }
+    }
+
     fun sendPasswordReset(email: String, onComplete: (Result<Unit>) -> Unit) {
         val cleanEmail = email.trim()
         if (!isAllowedEmail(cleanEmail)) {
