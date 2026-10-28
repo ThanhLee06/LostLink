@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 
-enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK }
+enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK, LINK, LOCK, EMAIL, BADGE, EYE, EYE_OFF }
 
 @Composable
 fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifier = Modifier.size(20.dp)) {
@@ -44,6 +44,47 @@ fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifie
                 HomeIcon.PHOTO -> { line(3f,5f,21f,5f,21f,20f,3f,20f,3f,5f); circle(8f,10f,2f); line(4f,19f,10f,13f,14f,16f,18f,11f,21f,14f) }
                 HomeIcon.CALENDAR -> { line(4f,5f,20f,5f,20f,21f,4f,21f,4f,5f); line(8f,2f,8f,8f); line(16f,2f,16f,8f); line(4f,10f,20f,10f); line(8f,15f,10f,15f) }
                 HomeIcon.DESK -> { line(2f,8f,12f,3f,22f,8f,2f,8f); line(3f,21f,21f,21f); line(5f,11f,5f,18f); line(12f,11f,12f,18f); line(19f,11f,19f,18f); line(2f,18f,22f,18f) }
+                HomeIcon.LINK -> {
+                    line(10f, 14f, 14f, 10f)
+                    val p1 = Path().apply {
+                        moveTo(13f, 7f); lineTo(15f, 5f); cubicTo(18.5f, 1.5f, 22.5f, 5.5f, 19f, 9f); lineTo(17f, 11f)
+                    }
+                    drawPath(p1, color, style = Stroke(2f, cap = StrokeCap.Round))
+                    val p2 = Path().apply {
+                        moveTo(11f, 17f); lineTo(9f, 19f); cubicTo(5.5f, 22.5f, 1.5f, 18.5f, 5f, 15f); lineTo(7f, 13f)
+                    }
+                    drawPath(p2, color, style = Stroke(2f, cap = StrokeCap.Round))
+                }
+                HomeIcon.LOCK -> {
+                    val p = Path().apply { moveTo(6.5f, 11f); lineTo(17.5f, 11f); lineTo(17.5f, 20f); lineTo(6.5f, 20f); close() }
+                    drawPath(p, color, style = Stroke(1.8f, cap = StrokeCap.Round))
+                    val s = Path().apply { moveTo(8.5f, 11f); lineTo(8.5f, 7.5f); cubicTo(8.5f, 4.5f, 15.5f, 4.5f, 15.5f, 7.5f); lineTo(15.5f, 11f) }
+                    drawPath(s, color, style = Stroke(1.8f, cap = StrokeCap.Round))
+                    circle(12f, 15.5f, 1.2f)
+                }
+                HomeIcon.EMAIL -> {
+                    val p = Path().apply { moveTo(3.5f, 6.5f); lineTo(20.5f, 6.5f); lineTo(20.5f, 17.5f); lineTo(3.5f, 17.5f); close() }
+                    drawPath(p, color, style = Stroke(1.8f, cap = StrokeCap.Round))
+                    line(3.5f, 7.5f, 12f, 13.5f, 20.5f, 7.5f)
+                }
+                HomeIcon.BADGE -> {
+                    val p = Path().apply { moveTo(4.5f, 6f); lineTo(19.5f, 6f); lineTo(19.5f, 18.5f); lineTo(4.5f, 18.5f); close() }
+                    drawPath(p, color, style = Stroke(1.8f, cap = StrokeCap.Round))
+                    circle(9f, 11f, 2f)
+                    line(13f, 11f, 16.5f, 11f)
+                    line(13f, 14.5f, 16.5f, 14.5f)
+                    line(7.5f, 14.5f, 10f, 14.5f)
+                }
+                HomeIcon.EYE -> {
+                    val p = Path().apply { moveTo(2f, 12f); cubicTo(6f, 6f, 18f, 6f, 22f, 12f); cubicTo(18f, 18f, 6f, 18f, 2f, 12f) }
+                    drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                    circle(12f, 12f, 3f)
+                }
+                HomeIcon.EYE_OFF -> {
+                    val p = Path().apply { moveTo(2f, 12f); cubicTo(6f, 6f, 18f, 6f, 22f, 12f); cubicTo(18f, 18f, 6f, 18f, 2f, 12f) }
+                    drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                    line(3f, 3f, 21f, 21f)
+                }
             }
         }
     }

@@ -12,7 +12,20 @@
           "package_name": "com.example.lostlink"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1078703584181-odtqgivrf2ocuvg8h44gdv6t10t53d0c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.lostlink",
+            "certificate_hash": "63f04eac5897e81e2af52dcf343f8c024f927006"
+          }
+        },
+        {
+          "client_id": "1078703584181-dbemvfoumf14leajnq914pgicagfuj2d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAg-T_xFDgRASYJLAxyCCEsoIq2FiY1_I4"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1078703584181-dbemvfoumf14leajnq914pgicagfuj2d.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
