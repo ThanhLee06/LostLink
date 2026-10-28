@@ -40,6 +40,7 @@ fun HomeScreen(
     onMore: () -> Unit,
     onSignIn: () -> Unit,
     onReport: (Boolean) -> Unit,
+    onRetry: () -> Unit = onRefresh,
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -77,27 +78,41 @@ fun HomeScreen(
         if (!state.allowed) {
             item(key = "auth") { FeedNotice("Đăng nhập để xem tin", "Dùng tài khoản @ut.edu.vn đã xác minh email.", "Đăng nhập", onSignIn) }
         } else {
-            items(state.posts, key = { "post:${it.id}" }) { post -> PostCard(post) { onPost(post.id) } }
+            item(key = "refresh") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onRefresh, enabled = !state.loading) {
+                        Text(if (state.loading && !state.loadingMore) "Đang tải…" else "Làm mới", color = Green, fontSize = 12.sp)
+                    }
+                }
+            }
             if (state.loading) item(key = "loading") {
-                Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(24.dp), color = Green, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(when {
+                        state.posts.isEmpty() -> "Đang tải tin…"
+                        state.loadingMore -> "Đang tải thêm tin…"
+                        else -> "Đang cập nhật danh sách…"
+                    }, fontSize = 12.sp, color = Muted)
                 }
             }
             if (state.error != null) item(key = "error") {
-                FeedNotice("Chưa tải được tin", state.error, "Thử lại", onRefresh)
+                FeedNotice(if (state.posts.isEmpty()) "Chưa tải được tin" else "Danh sách chưa được cập nhật",
+                    state.error, "Thử lại", onRetry)
             }
             if (!state.loading && state.error == null && state.posts.isEmpty()) item(key = "empty") {
-                FeedNotice("Chưa có bài đăng", "Những tin mới sẽ xuất hiện tại đây.", "Làm mới", onRefresh)
+                FeedNotice("Chưa có tin", "Hãy đăng tin để mọi người cùng giúp tìm lại đồ.", "Đăng tin") { onReport(true) }
             }
+            items(state.posts, key = { "post:${it.id}" }) { post -> PostCard(post) { onPost(post.id) } }
             if (state.posts.isNotEmpty()) item(key = "more") {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (state.hasMore) {
                         Text("Đã tải ${state.posts.size} tin • Còn tin để xem", fontSize = 11.sp, color = Muted)
-                        TextButton(onClick = onMore, enabled = !state.loading) { Text("Xem thêm tin", color = Green) }
+                        TextButton(onClick = onMore, enabled = !state.loading && state.error == null) { Text("Xem thêm tin", color = Green) }
                     } else if (!state.loading && state.error == null) {
                         Text("Đã xem hết tin", fontSize = 11.sp, color = Muted)
                     }
-                    TextButton(onClick = onRefresh, enabled = !state.loading) { Text("Làm mới", color = Green, fontSize = 12.sp) }
                 }
             }
         }

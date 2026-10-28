@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 fun HomeRoute(
     model: HomeViewModel,
     onSignOut: () -> Unit = {},
+    onCreatePost: (Boolean) -> Unit = {},
 ) {
     var showSignOutDialog by remember { mutableStateOf(false) }
 
@@ -48,7 +49,8 @@ fun HomeRoute(
                     onRefresh = { model.load() },
                     onMore = { model.load(true) },
                     onSignIn = onSignOut,
-                    onReport = {}
+                    onReport = onCreatePost,
+                    onRetry = model::retry,
                 )
             }
         }
@@ -75,5 +77,3 @@ fun HomeRoute(
         }
     }
 }
-
-
