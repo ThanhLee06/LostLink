@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,11 +60,11 @@ fun AuthScreen(
     var mode by rememberSaveable { mutableStateOf(initialMode) }
     val context = LocalContext.current
 
-    // Form fields
-    var email by rememberSaveable { mutableStateOf("") }
-    var name by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirmPassword by rememberSaveable { mutableStateOf("") }
+    // Form fields using TextFieldValue to preserve Vietnamese IME composing state (Telex/VNI dead keys like dd -> đ)
+    var email by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var name by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var password by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var confirmPassword by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
 
     // UI state
     var loading by remember { mutableStateOf(value = false) }
@@ -86,7 +87,7 @@ fun AuthScreen(
             val idToken: String? = account?.idToken
 
             if (selectedEmail.isNotBlank()) {
-                email = selectedEmail
+                email = TextFieldValue(selectedEmail)
             }
 
             if (selectedEmail.isNotBlank() && !FirebaseAccountRepository.isAllowedEmail(selectedEmail)) {
@@ -197,12 +198,14 @@ fun AuthScreen(
 
                                     TextButton(
                                         onClick = {
-                                            if (email.isNotBlank() && password.isNotBlank()) {
+                                            val emailStr = email.text.trim()
+                                            val passStr = password.text
+                                            if (emailStr.isNotBlank() && passStr.isNotBlank()) {
                                                 loading = true
-                                                accounts.sendVerificationEmailForAccount(email, password) { res ->
+                                                accounts.sendVerificationEmailForAccount(emailStr, passStr) { res ->
                                                     loading = false
                                                     res.onSuccess {
-                                                        Toast.makeText(context, "Đã gửi lại thư xác minh tới Gmail ($email)! Kiểm tra hộp thư của bạn.", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, "Đã gửi lại thư xác minh tới Gmail ($emailStr)! Kiểm tra hộp thư của bạn.", Toast.LENGTH_LONG).show()
                                                     }.onFailure { err ->
                                                         Toast.makeText(context, err.localizedMessage ?: "Gửi thư thất bại.", Toast.LENGTH_LONG).show()
                                                     }
@@ -319,20 +322,25 @@ fun AuthScreen(
                         errorMessage = null
                         successMessage = null
                         showResendVerificationButton = false
+                        val emailStr = email.text.trim()
+                        val passStr = password.text
+                        val nameStr = name.text.trim()
+                        val confirmPassStr = confirmPassword.text
+
                         if (mode == AuthMode.LOGIN) {
-                            if (email.isBlank() || password.isBlank()) {
+                            if (emailStr.isBlank() || passStr.isBlank()) {
                                 errorMessage = "Vui lòng nhập đầy đủ email và mật khẩu."
                                 return@Button
                             }
                             loading = true
-                            accounts.signIn(email, password) { result ->
+                            accounts.signIn(emailStr, passStr) { result ->
                                 loading = false
                                 result.onSuccess {
                                     onAuthSuccess()
                                 }.onFailure { err ->
                                     val msg = err.localizedMessage.orEmpty()
                                     if (msg.contains("Verify your email") || msg.contains("xác minh")) {
-                                        errorMessage = "Tài khoản của bạn chưa được xác minh email. Vui lòng kiểm tra hộp thư Gmail ($email) và nhấp vào link xác nhận."
+                                        errorMessage = "Tài khoản của bạn chưa được xác minh email. Vui lòng kiểm tra hộp thư Gmail ($emailStr) và nhấp vào link xác nhận."
                                         showResendVerificationButton = true
                                     } else {
                                         errorMessage = "Đăng nhập thất bại. Kiểm tra email, mật khẩu hoặc xác minh tài khoản."
@@ -341,34 +349,34 @@ fun AuthScreen(
                                 }
                             }
                         } else {
-                            if (name.isBlank()) {
+                            if (nameStr.isBlank()) {
                                 errorMessage = "Vui lòng nhập họ và tên."
                                 return@Button
                             }
-                            if (email.isBlank() || password.isBlank()) {
+                            if (emailStr.isBlank() || passStr.isBlank()) {
                                 errorMessage = "Vui lòng nhập đầy đủ email và mật khẩu."
                                 return@Button
                             }
-                            if (!FirebaseAccountRepository.isAllowedEmail(email)) {
+                            if (!FirebaseAccountRepository.isAllowedEmail(emailStr)) {
                                 errorMessage = "Vui lòng sử dụng địa chỉ email sinh viên @ut.edu.vn."
                                 return@Button
                             }
-                            if (password.length < 6) {
+                            if (passStr.length < 6) {
                                 errorMessage = "Mật khẩu phải có ít nhất 6 ký tự."
                                 return@Button
                             }
-                            if (password != confirmPassword) {
+                            if (passStr != confirmPassStr) {
                                 errorMessage = "Mật khẩu nhập lại không khớp."
                                 return@Button
                             }
                             loading = true
-                            accounts.register(name, email, password) { result ->
+                            accounts.register(nameStr, emailStr, passStr) { result ->
                                 loading = false
                                 result.onSuccess {
-                                    successMessage = "Đã gửi thư xác minh tới Gmail ($email)! Vui lòng mở ứng dụng Gmail và nhấp vào link xác minh tài khoản trước khi đăng nhập."
+                                    successMessage = "Đã gửi thư xác minh tới Gmail ($emailStr)! Vui lòng mở ứng dụng Gmail và nhấp vào link xác minh tài khoản trước khi đăng nhập."
                                     mode = AuthMode.LOGIN
-                                    password = ""
-                                    confirmPassword = ""
+                                    password = TextFieldValue("")
+                                    confirmPassword = TextFieldValue("")
                                 }.onFailure { err ->
                                     errorMessage = err.localizedMessage ?: "Đăng ký thất bại. Vui lòng thử lại."
                                 }
@@ -509,7 +517,7 @@ fun AuthScreen(
 
     // Forgot Password Dialog
     if (showForgotPasswordDialog) {
-        var resetEmail by remember { mutableStateOf(email) }
+        var resetEmail by remember { mutableStateOf(email.text) }
         var resetLoading by remember { mutableStateOf(value = false) }
         var resetError by remember { mutableStateOf<String?>(null) }
 
@@ -580,8 +588,8 @@ private fun openGmailApp(context: Context) {
 @Composable
 private fun AuthInputField(
     label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
     icon: HomeIcon,
     isPassword: Boolean = false,
