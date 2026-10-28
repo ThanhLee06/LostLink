@@ -605,9 +605,7 @@ private fun AuthInputField(
             shape = RoundedCornerShape(12.dp),
             color = FieldBackground,
             border = BorderStroke(1.dp, FieldBorder),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             TextField(
                 value = value,
@@ -639,6 +637,7 @@ private fun AuthInputField(
                 keyboardOptions = KeyboardOptions(
                     keyboardType = keyboardType,
                     imeAction = ImeAction.Next,
+                    autoCorrectEnabled = true,
                 ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
@@ -650,7 +649,9 @@ private fun AuthInputField(
                     focusedTextColor = TextDark,
                     unfocusedTextColor = TextDark,
                 ),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp),
             )
         }
     }
