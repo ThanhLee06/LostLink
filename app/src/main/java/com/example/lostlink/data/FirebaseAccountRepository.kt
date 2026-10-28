@@ -2,6 +2,7 @@ package com.example.lostlink.data
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
 
 /** Email/password account operations. Data access is enforced again by Firebase Security Rules. */
@@ -68,6 +69,36 @@ class FirebaseAccountRepository(
         if (user == null) return onComplete(Result.failure(IllegalStateException("Sign in first.")))
         user.sendEmailVerification()
             .addOnSuccessListener { onComplete(Result.success(Unit)) }
+            .addOnFailureListener { error -> onComplete(Result.failure(error)) }
+    }
+
+    fun sendPasswordReset(email: String, onComplete: (Result<Unit>) -> Unit) {
+        val cleanEmail = email.trim()
+        if (!isAllowedEmail(cleanEmail)) {
+            return onComplete(Result.failure(IllegalArgumentException("Vui lòng sử dụng địa chỉ email @ut.edu.vn.")))
+        }
+        auth.sendPasswordResetEmail(cleanEmail)
+            .addOnSuccessListener { onComplete(Result.success(Unit)) }
+            .addOnFailureListener { error -> onComplete(Result.failure(error)) }
+    }
+
+    fun signInWithGoogle(idToken: String, onComplete: (Result<FirebaseUser>) -> Unit) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnSuccessListener { result ->
+                val user = result.user
+                if (user == null) {
+                    onComplete(Result.failure(IllegalStateException("Không nhận được tài khoản Google.")))
+                } else {
+                    val userEmail = user.email.orEmpty()
+                    if (!isAllowedEmail(userEmail)) {
+                        auth.signOut()
+                        onComplete(Result.failure(IllegalArgumentException("Vui lòng chọn tài khoản Google sinh viên có đuôi @ut.edu.vn ($userEmail).")))
+                    } else {
+                        onComplete(Result.success(user))
+                    }
+                }
+            }
             .addOnFailureListener { error -> onComplete(Result.failure(error)) }
     }
 
