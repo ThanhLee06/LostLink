@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -19,16 +20,19 @@ fun HomeRoute(
     onSignOut: (() -> Unit)? = null,
     onPost: ((String) -> Unit)? = null,
     onCreatePost: ((Boolean) -> Unit)? = null,
+    detailContent: (@Composable () -> Unit)? = null,
+    onReturnHome: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var searchRequest by rememberSaveable { mutableIntStateOf(0) }
     var homeRequest by rememberSaveable { mutableIntStateOf(0) }
+    val savedScreens = rememberSaveableStateHolder()
     fun select(index: Int) {
         when (index) {
-            0 -> { selected = 0; homeRequest++ }
-            1 -> { selected = 1; searchRequest++ }
+            0 -> { onReturnHome(); selected = 0; homeRequest++ }
+            1 -> { onReturnHome(); selected = 1; searchRequest++ }
             2 -> if (onCreatePost != null) onCreatePost(true) else {
                 Toast.makeText(context, "Chức năng đăng tin sẽ được bổ sung sau.", Toast.LENGTH_SHORT).show()
             }
@@ -41,16 +45,18 @@ fun HomeRoute(
         Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = { HomeNavigation(selected, showAccount, model.state.allowed, onSignOut != null, ::select) }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                HomeScreen(state = model.state,
-                    onPost = { onPost?.invoke(it) },
-                    onRefresh = { if (!model.state.loading) model.load() },
-                    onMore = { if (!model.state.loading) model.load(true) },
-                    onSignIn = { onSignOut?.invoke() }, onReport = { onCreatePost?.invoke(it) },
-                    canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
-                    onAccount = if (onSignOut != null) ({ showAccount = true }) else null,
-                    searchRequest = searchRequest, homeRequest = homeRequest,
-                    onSearchActive = { active -> selected = if (active) 1 else 0 },
-                )
+                if (detailContent != null) detailContent() else savedScreens.SaveableStateProvider("home") {
+                    HomeScreen(state = model.state,
+                        onPost = { onPost?.invoke(it) },
+                        onRefresh = { if (!model.state.loading) model.load() },
+                        onMore = { if (!model.state.loading) model.load(true) },
+                        onSignIn = { onSignOut?.invoke() }, onReport = { onCreatePost?.invoke(it) },
+                        canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
+                        onAccount = if (onSignOut != null) ({ showAccount = true }) else null,
+                        searchRequest = searchRequest, homeRequest = homeRequest,
+                        onSearchActive = { active -> selected = if (active) 1 else 0 },
+                    )
+                }
             }
         }
         if (showAccount) AlertDialog(onDismissRequest = { showAccount = false }, title = { Text("Tài khoản") },
