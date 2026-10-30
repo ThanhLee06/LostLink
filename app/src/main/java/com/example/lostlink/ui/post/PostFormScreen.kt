@@ -1,9 +1,5 @@
 package com.example.lostlink.ui.post
 
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +23,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -59,24 +56,20 @@ fun PostFormScreen(
     }
 
     Surface(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceContainerLowest
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── Scrollable content ──
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
-                // ── Header section ──
                 PostFormBanner()
 
-                // ── Progress indicator ──
                 Spacer(Modifier.height(16.dp))
                 PostFormProgressIndicator(state = state)
 
-                // ── Form card ──
                 Spacer(Modifier.height(16.dp))
                 Card(
                     modifier = Modifier
@@ -96,12 +89,30 @@ fun PostFormScreen(
                             onCategoryChange = vm::onCategoryChange,
                             onDescriptionChange = vm::onDescriptionChange
                         )
+
+                        Spacer(Modifier.height(20.dp))
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            thickness = 1.dp
+                        )
+                        Spacer(Modifier.height(20.dp))
+
+                        PostFormWhereWhen(
+                            state = state,
+                            onAreaChoiceChange = vm::onAreaChoiceChange,
+                            onAreaChange = vm::onAreaChange,
+                            onAreaOtherChange = vm::onAreaOtherChange,
+                            onLocationNoteChange = vm::onLocationNoteChange,
+                            onTimeModeChange = vm::onTimeModeChange,
+                            onExactTimeChange = vm::onExactTimeChange,
+                            onRangeChange = vm::onRangeChange,
+                            onTimeNoteChange = vm::onTimeNoteChange
+                        )
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(32.dp))
             }
 
-            // ── Fixed bottom button ──
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
@@ -127,7 +138,7 @@ fun PostFormScreen(
                     Text(
                         "Tiếp tục",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.width(8.dp))
                     Icon(
@@ -141,7 +152,6 @@ fun PostFormScreen(
     }
 }
 
-// ── Header banner ──
 @Composable
 private fun PostFormBanner() {
     Box(
@@ -186,13 +196,26 @@ private fun PostFormBanner() {
     }
 }
 
-// ── Step progress dots ──
 @Composable
 private fun PostFormProgressIndicator(state: PostFormState) {
+    val isAreaFilled = when (state.areaChoice) {
+        AreaChoice.KNOWN -> state.areaId != null
+        AreaChoice.OTHER -> state.areaOtherText.isNotBlank()
+        AreaChoice.UNKNOWN -> true
+    }
+    val isTimeFilled = when (state.timeMode) {
+        TimeMode.EXACT -> state.exactAtMillis != null
+        TimeMode.RANGE -> state.rangeStartMillis != null && state.rangeEndMillis != null
+        TimeMode.DESCRIBED -> state.timeNote.isNotBlank()
+        TimeMode.UNKNOWN -> true
+    }
+
     val filledSteps = listOfNotNull(
         if (state.title.isNotBlank()) 1 else null,
         if (state.categoryId != null) 2 else null,
-        if (state.description.isNotBlank()) 3 else null
+        if (state.description.isNotBlank()) 3 else null,
+        if (isAreaFilled) 4 else null,
+        if (isTimeFilled) 5 else null
     ).size
 
     Row(
@@ -202,9 +225,9 @@ private fun PostFormProgressIndicator(state: PostFormState) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val labels = listOf("Loại tin", "Tiêu đề", "Danh mục", "Mô tả")
+        val labels = listOf("Tiêu đề", "Danh mục", "Mô tả", "Khu vực", "Thời gian")
         labels.forEachIndexed { index, label ->
-            val isActive = index <= filledSteps
+            val isActive = index < filledSteps
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     modifier = Modifier
