@@ -1,7 +1,6 @@
 package com.example.lostlink.ui.post
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -75,7 +74,7 @@ private fun PostType.icon(): ImageVector = when (this) {
     PostType.FOUND -> Icons.Rounded.Inventory2
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
 fun PostFormHeader(
     state: PostFormState,
@@ -83,10 +82,11 @@ fun PostFormHeader(
     onTitleChange: (String) -> Unit,
     onCategoryChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imageContent: (@Composable () -> Unit)? = null
 ) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
-    val types = PostType.values()
+    val types = PostType.entries
 
     val textFieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -100,13 +100,11 @@ fun PostFormHeader(
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
 
-        // ── Section label: Loại tin ──
         FormSectionLabel(
             icon = Icons.Outlined.Info,
             title = "Loại tin"
         )
 
-        // ── Type selector (custom toggle instead of SegmentedButton) ──
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -183,19 +181,18 @@ fun PostFormHeader(
             thickness = 1.dp
         )
 
-        // ── Section label: Tiêu đề ──
         FormSectionLabel(
             icon = Icons.Outlined.Title,
             title = state.type.titleLabel()
         )
 
-        ImeAwareOutlinedTextField(
-            externalValue = state.title,
+        OutlinedTextField(
+            value = state.title,
             onValueChange = onTitleChange,
             placeholder = { Text("Ví dụ: Ví màu nâu") },
             singleLine = true,
             isError = state.errors.title != null,
-            supportingText = state.errors.title?.let { { Text(it) } },
+            supportingText = state.errors.title?.let { errorText -> { Text(errorText) } },
             shape = textFieldShape,
             colors = textFieldColors,
             modifier = Modifier.fillMaxWidth()
@@ -206,7 +203,6 @@ fun PostFormHeader(
             thickness = 1.dp
         )
 
-        // ── Section label: Danh mục ──
         FormSectionLabel(
             icon = Icons.Outlined.Category,
             title = "Danh mục"
@@ -232,7 +228,6 @@ fun PostFormHeader(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Transparent overlay to capture clicks
             Box(
                 Modifier
                     .matchParentSize()
@@ -276,12 +271,19 @@ fun PostFormHeader(
             }
         }
 
+        if (imageContent != null) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 1.dp
+            )
+            imageContent()
+        }
+
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             thickness = 1.dp
         )
 
-        // ── Section label: Đặc điểm nhận diện ──
         FormSectionLabel(
             icon = Icons.Outlined.Description,
             title = "Đặc điểm nhận diện"
@@ -329,9 +331,8 @@ fun PostFormHeader(
     }
 }
 
-// ── Reusable section label ──
 @Composable
-private fun FormSectionLabel(
+fun FormSectionLabel(
     icon: ImageVector,
     title: String,
     modifier: Modifier = Modifier
