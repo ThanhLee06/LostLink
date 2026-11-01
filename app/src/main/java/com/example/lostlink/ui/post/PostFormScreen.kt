@@ -1,9 +1,6 @@
 package com.example.lostlink.ui.post
 
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,20 +18,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.PostAdd
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,36 +53,87 @@ fun PostFormScreen(
     uid: String?,
     onLeave: () -> Unit,
     modifier: Modifier = Modifier,
-    vm: PostFormViewModel = viewModel()
+    vm: PostFormViewModel = viewModel(),
+    onSubmitSuccess: ((PostFormState) -> Unit)? = null
 ) {
     val state by vm.state.collectAsState()
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uid) { vm.bindUser(uid) }
 
-    ConfirmLeaveDraft(state.hasUnsavedChanges) {
-        vm.clearDraft()
-        onLeave()
+    val handleBack = {
+        if (state.hasUnsavedChanges) {
+            showDiscardDialog = true
+        } else {
+            onLeave()
+        }
+    }
+
+    BackHandler(enabled = true) { handleBack() }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            icon = {
+                Icon(
+                    Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    "Bỏ bản nháp?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Bạn đã nhập thông tin nhưng chưa đăng. Bạn có chắc muốn thoát ra?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    vm.clearDraft()
+                    onLeave()
+                }) {
+                    Text(
+                        "Thoát & Bỏ nháp",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(
+                        "Ở lại",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        )
     }
 
     Surface(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceContainerLowest
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── Scrollable content ──
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
-                // ── Header section ──
-                PostFormBanner()
+                PostFormBanner(
+                    onBackClick = handleBack,
+                    onLoadSample = vm::loadSampleData
+                )
 
-                // ── Progress indicator ──
                 Spacer(Modifier.height(16.dp))
                 PostFormProgressIndicator(state = state)
 
-                // ── Form card ──
                 Spacer(Modifier.height(16.dp))
                 Card(
                     modifier = Modifier
@@ -94,14 +151,41 @@ fun PostFormScreen(
                             onTypeChange = vm::onTypeChange,
                             onTitleChange = vm::onTitleChange,
                             onCategoryChange = vm::onCategoryChange,
-                            onDescriptionChange = vm::onDescriptionChange
+                            onDescriptionChange = vm::onDescriptionChange,
+                            imageContent = {
+                                PostFormImageSection(
+                                    imageUri = state.imageUri,
+                                    imageError = state.errors.image,
+                                    onImagePicked = vm::onImageSelected,
+                                    onRemoveImage = vm::onRemoveImage,
+                                    onImageError = vm::onImageError
+                                )
+                            }
+                        )
+
+                        Spacer(Modifier.height(20.dp))
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            thickness = 1.dp
+                        )
+                        Spacer(Modifier.height(20.dp))
+
+                        PostFormWhereWhen(
+                            state = state,
+                            onAreaChoiceChange = vm::onAreaChoiceChange,
+                            onAreaChange = vm::onAreaChange,
+                            onAreaOtherChange = vm::onAreaOtherChange,
+                            onLocationNoteChange = vm::onLocationNoteChange,
+                            onTimeModeChange = vm::onTimeModeChange,
+                            onExactTimeChange = vm::onExactTimeChange,
+                            onRangeChange = vm::onRangeChange,
+                            onTimeNoteChange = vm::onTimeNoteChange
                         )
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(32.dp))
             }
 
-            // ── Fixed bottom button ──
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
@@ -109,7 +193,11 @@ fun PostFormScreen(
                 tonalElevation = 2.dp
             ) {
                 ElevatedButton(
-                    onClick = { vm.validate() },
+                    onClick = {
+                        if (vm.validate()) {
+                            onSubmitSuccess?.invoke(state)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -127,7 +215,7 @@ fun PostFormScreen(
                     Text(
                         "Tiếp tục",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.width(8.dp))
                     Icon(
@@ -141,9 +229,11 @@ fun PostFormScreen(
     }
 }
 
-// ── Header banner ──
 @Composable
-private fun PostFormBanner() {
+private fun PostFormBanner(
+    onBackClick: () -> Unit,
+    onLoadSample: (() -> Unit)? = null
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,48 +241,87 @@ private fun PostFormBanner() {
                 color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
             )
-            .padding(horizontal = 24.dp, vertical = 28.dp)
+            .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f, fill = false)
             ) {
-                Icon(
-                    Icons.Rounded.PostAdd,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Thoát ra",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        "Đăng tin mới",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        "Điền thông tin để đăng tin tìm đồ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                }
             }
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(
-                    "Đăng tin mới",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    "Điền thông tin để đăng tin tìm đồ",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
+
+            if (onLoadSample != null) {
+                Surface(
+                    onClick = onLoadSample,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Text(
+                        "Dữ liệu mẫu",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
             }
         }
     }
 }
 
-// ── Step progress dots ──
 @Composable
 private fun PostFormProgressIndicator(state: PostFormState) {
+    val isAreaFilled = when (state.areaChoice) {
+        AreaChoice.KNOWN -> state.areaId != null
+        AreaChoice.OTHER -> state.areaOtherText.isNotBlank()
+        AreaChoice.UNKNOWN -> true
+    }
+    val isTimeFilled = when (state.timeMode) {
+        TimeMode.EXACT -> state.exactAtMillis != null
+        TimeMode.RANGE -> state.rangeStartMillis != null && state.rangeEndMillis != null
+        TimeMode.DESCRIBED -> state.timeNote.isNotBlank()
+        TimeMode.UNKNOWN -> true
+    }
+
     val filledSteps = listOfNotNull(
         if (state.title.isNotBlank()) 1 else null,
         if (state.categoryId != null) 2 else null,
-        if (state.description.isNotBlank()) 3 else null
+        if (state.imageUri != null) 3 else null,
+        if (state.description.isNotBlank()) 4 else null,
+        if (isAreaFilled) 5 else null,
+        if (isTimeFilled) 6 else null
     ).size
 
     Row(
@@ -202,9 +331,9 @@ private fun PostFormProgressIndicator(state: PostFormState) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val labels = listOf("Loại tin", "Tiêu đề", "Danh mục", "Mô tả")
+        val labels = listOf("Tiêu đề", "Danh mục", "Ảnh", "Mô tả", "Khu vực", "Thời gian")
         labels.forEachIndexed { index, label ->
-            val isActive = index <= filledSteps
+            val isActive = index < filledSteps
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     modifier = Modifier
