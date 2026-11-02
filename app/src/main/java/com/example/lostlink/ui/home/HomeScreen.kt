@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -37,22 +38,28 @@ fun HomeScreen(
     onAccount: (() -> Unit)? = null,
     searchRequest: Int = 0,
     homeRequest: Int = 0,
+    resetSearchRequest: Int = 0,
     onSearchActive: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
 ) {
     val colors = MaterialTheme.colorScheme
     var search by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     var filter by rememberSaveable { mutableStateOf(HomePostFilter.ALL) }
+    var categories by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var areas by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var searchFocused by remember { mutableStateOf(false) }
     var lastLoadWasMore by rememberSaveable { mutableStateOf(false) }
     var consumedSearchRequest by rememberSaveable { mutableIntStateOf(0) }
     var consumedHomeRequest by rememberSaveable { mutableIntStateOf(0) }
+    var consumedResetSearchRequest by rememberSaveable { mutableIntStateOf(0) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val largeText = LocalDensity.current.fontScale > 1.3f
-    val visible = remember(state.posts, search.text, filter) { filterLoadedHomePosts(state.posts, search.text, filter) }
-    val searching = search.text.isNotBlank() || filter != HomePostFilter.ALL
+    val visible = remember(state.posts, search.text, filter, categories, areas) {
+        filterLoadedHomePosts(state.posts, search.text, filter, categories, areas)
+    }
+    val searching = search.text.isNotBlank() || filter != HomePostFilter.ALL || categories.isNotEmpty() || areas.isNotEmpty()
     fun refresh() { if (!state.loading) { lastLoadWasMore = false; onRefresh() } }
     fun more() { if (!state.loading) { lastLoadWasMore = true; onMore() } }
     LaunchedEffect(searchRequest, state.allowed) {
@@ -65,11 +72,16 @@ fun HomeScreen(
             keyboard?.show()
         }
     }
-    LaunchedEffect(homeRequest) {
-        if (homeRequest > consumedHomeRequest) {
+    LaunchedEffect(homeRequest, resetSearchRequest) {
+        if (resetSearchRequest > consumedResetSearchRequest) {
             search = TextFieldValue()
             filter = HomePostFilter.ALL
+            categories = emptyList()
+            areas = emptyList()
             lastLoadWasMore = false
+            consumedResetSearchRequest = resetSearchRequest
+        }
+        if (homeRequest > consumedHomeRequest) {
             focusManager.clearFocus()
             keyboard?.hide()
             withFrameNanos { }
@@ -77,7 +89,7 @@ fun HomeScreen(
             consumedHomeRequest = homeRequest
         }
     }
-    LaunchedEffect(search.text, searchFocused) { onSearchActive(search.text.isNotBlank() || searchFocused) }
+    LaunchedEffect(searchFocused) { onSearchActive(searchFocused) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.background)) {
         val gutter = if (maxWidth >= 600.dp) 32.dp else HomeTokens.Gutter
@@ -138,10 +150,11 @@ fun HomeScreen(
             }
             if (!deferUnavailableActions) item(key = "report") { reportContent() }
             item(key = "heading") {
-                FeedHeading(searching, visible.size, state.allowed, state.loading, filter, shortWindow,
-                    onRefresh = ::refresh, onFilter = { candidate ->
-                        filter = if (filter == candidate && candidate != HomePostFilter.ALL) HomePostFilter.ALL else candidate
-                    })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FeedHeading(searching, visible.size, state.allowed, state.loading, filter, shortWindow,
+                        onRefresh = ::refresh, onFilter = { filter = it })
+                    HomeAdvancedFilters(categories, areas, state.allowed, visible.size, { categories = it }, { areas = it })
+                }
             }
             if (!state.allowed) item(key = "auth") {
                 FeedNotice("Cùng tìm lại đồ thất lạc", "Đăng nhập bằng tài khoản UTH đã xác minh để xem bài đăng trong cộng đồng.", "Đăng nhập", onSignIn)
@@ -162,8 +175,8 @@ fun HomeScreen(
                         { onReport(true) }, enabled = reportAvailable)
                 }
                 if (!state.loading && state.error == null && state.posts.isNotEmpty() && visible.isEmpty()) item(key = "no-match") {
-                    FeedNotice("Chưa thấy tin phù hợp", "Không có kết quả trong ${state.posts.size} tin đã tải. Thử từ khóa hoặc loại tin khác.",
-                        "Xóa bộ lọc", { search = TextFieldValue(); filter = HomePostFilter.ALL })
+                    FeedNotice("Chưa thấy tin phù hợp", "Không có kết quả trong ${state.posts.size} tin đã tải. Thử thay đổi từ khóa, loại tin, danh mục hoặc khu vực.",
+                        "Xóa bộ lọc", { search = TextFieldValue(); filter = HomePostFilter.ALL; categories = emptyList(); areas = emptyList() })
                 }
                 items(visible, key = { "post:${it.id}" }, contentType = { "post-card" }) { post ->
                     HomePostCard(post, if (canOpenPosts) ({ onPost(post.id) }) else null)
@@ -260,10 +273,11 @@ private fun FeedHeading(searching: Boolean, count: Int, allowed: Boolean, loadin
 @Composable
 private fun HomeFilters(filter: HomePostFilter, enabled: Boolean, onFilter: (HomePostFilter) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         HomePostFilter.entries.forEach { candidate ->
             FilterChip(selected = filter == candidate, onClick = { onFilter(candidate) }, enabled = enabled,
-                modifier = Modifier.heightIn(min = HomeTokens.Target).testTag("filter-${candidate.name}"),
+                modifier = Modifier.heightIn(min = HomeTokens.Target).testTag("filter-${candidate.name}")
+                    .semantics { role = Role.RadioButton },
                 label = { Text(candidate.label, style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = if (filter == candidate) ({ LineIcon(HomeIcon.CHECK, colors.onPrimaryContainer, Modifier.size(16.dp)) }) else null,
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = colors.primaryContainer,

@@ -33,6 +33,7 @@ fun HomeRoute(
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var searchRequest by rememberSaveable { mutableIntStateOf(0) }
     var homeRequest by rememberSaveable { mutableIntStateOf(0) }
+    var resetSearchRequest by rememberSaveable { mutableIntStateOf(0) }
     val savedScreens = rememberSaveableStateHolder()
     fun createPost(lost: Boolean) {
         if (model.state.allowed && model.accounts.isUserLoggedInAndVerified) onCreatePost?.invoke(lost)
@@ -44,6 +45,7 @@ fun HomeRoute(
                 if (HomePostCreation.consume(activity.intent, accountId)) {
                     selected = 0
                     homeRequest++
+                    resetSearchRequest++
                     model.refreshAfterPostCreated()
                 }
             }
@@ -75,8 +77,8 @@ fun HomeRoute(
                         onSignIn = { onSignOut?.invoke() }, onReport = ::createPost,
                         canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
                         onAccount = if (onSignOut != null) ({ showAccount = true }) else null,
-                        searchRequest = searchRequest, homeRequest = homeRequest,
-                        onSearchActive = { active -> selected = if (active) 1 else 0 },
+                        searchRequest = searchRequest, homeRequest = homeRequest, resetSearchRequest = resetSearchRequest,
+                        onSearchActive = { active -> if (active) selected = 1 },
                     )
                 }
             }
