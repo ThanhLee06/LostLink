@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 
-enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK, LINK, LOCK, EMAIL, BADGE, EYE, EYE_OFF, CLOSE, REFRESH }
+enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK, LINK, LOCK, EMAIL, BADGE, EYE, EYE_OFF, CLOSE, REFRESH, FILTER }
 
 @Composable
 fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifier = Modifier.size(20.dp)) {
@@ -27,6 +27,7 @@ fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifie
             }
             fun circle(x: Float, y: Float, r: Float) = drawCircle(color, r, Offset(x, y), style = Stroke(1.5f))
             when (icon) {
+                HomeIcon.FILTER -> { line(4f,6f,20f,6f); circle(9f,6f,2f); line(4f,12f,20f,12f); circle(15f,12f,2f); line(4f,18f,20f,18f); circle(9f,18f,2f) }
                 HomeIcon.CLOSE -> { line(6f,6f,18f,18f); line(18f,6f,6f,18f) }
                 HomeIcon.REFRESH -> {
                     val p = Path().apply { moveTo(20f,9f); cubicTo(15f,-2f,1f,5f,4f,15f); cubicTo(6f,22f,17f,23f,20f,16f) }

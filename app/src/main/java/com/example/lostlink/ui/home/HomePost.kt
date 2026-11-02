@@ -19,6 +19,9 @@ data class HomePost(
     val contactPhone: String = "",
     val pickupLocation: String = "",
     val status: String = "OPEN",
+    val categoryId: String = "",
+    val category: String = "",
+    val areaId: String = "",
 ) {
     val isLost get() = type == "LOST"
     val typeLabel get() = if (isLost) "Mất" else "Tìm thấy"
@@ -38,6 +41,7 @@ data class HomePost(
                 text("description"), text("occurredAt"), photos.distinct().filter(::isPublicImage),
                 text("authorName"), text("contactPhone"), text("pickupLocation"),
                 text("status").ifBlank { "OPEN" },
+                text("categoryId"), text("category"), text("areaId"),
             )
         }
 

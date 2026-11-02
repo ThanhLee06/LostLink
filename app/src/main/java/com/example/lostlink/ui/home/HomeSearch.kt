@@ -10,10 +10,13 @@ internal fun foldHomeSearch(value: String): String = Normalizer.normalize(value,
     .replace(accentMarks, "").replace('đ', 'd').replace('Đ', 'D').lowercase(Locale.ROOT)
 
 /** Purely local: preserves the Firestore order and never claims to search unloaded posts. */
-fun filterLoadedHomePosts(posts: List<HomePost>, query: String, filter: HomePostFilter): List<HomePost> {
+fun filterLoadedHomePosts(posts: List<HomePost>, query: String, filter: HomePostFilter,
+    categories: List<String> = emptyList(), areas: List<String> = emptyList()): List<HomePost> {
     val words = foldHomeSearch(query.trim()).split(Regex("\\s+")).filter(String::isNotEmpty)
     return posts.filter { post ->
         (filter == HomePostFilter.ALL || post.type == filter.name) &&
+            (categories.isEmpty() || HomeCategory.from(post.categoryId.ifBlank { post.category })?.id in categories) &&
+            (areas.isEmpty() || HomeArea.entries.any { it.id in areas && it.matches(post) }) &&
             (words.isEmpty() || foldHomeSearch("${post.title} ${post.location}").let { text -> words.all(text::contains) })
     }
 }
