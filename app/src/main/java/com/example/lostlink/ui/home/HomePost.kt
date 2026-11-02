@@ -27,7 +27,7 @@ data class HomePost(
         fun fromDocument(id: String, data: Map<String, Any?>): HomePost {
             fun text(key: String) = (data[key] as? String)?.trim().orEmpty()
             val title = text("title")
-            val type = text("type")
+            val type = text("type").uppercase(Locale.ROOT)
             require(id.isNotBlank() && title.isNotBlank() && type in listOf("LOST", "FOUND"))
             val createdAt = (data["createdAt"] as? Timestamp)?.toDate()?.time
                 ?: error("Missing posting timestamp")
