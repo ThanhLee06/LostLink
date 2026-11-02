@@ -67,13 +67,14 @@ fun HomeScreen(
     }
     LaunchedEffect(homeRequest) {
         if (homeRequest > consumedHomeRequest) {
-            consumedHomeRequest = homeRequest
             search = TextFieldValue()
             filter = HomePostFilter.ALL
+            lastLoadWasMore = false
             focusManager.clearFocus()
             keyboard?.hide()
             withFrameNanos { }
             listState.scrollToItem(0)
+            consumedHomeRequest = homeRequest
         }
     }
     LaunchedEffect(search.text, searchFocused) { onSearchActive(search.text.isNotBlank() || searchFocused) }
@@ -84,6 +85,13 @@ fun HomeScreen(
         val deferUnavailableActions = shortWindow && !reportAvailable
         val reportContent: @Composable () -> Unit = {
             Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onReport(true) }, enabled = reportAvailable && state.allowed,
+                    contentPadding = PaddingValues(0.dp), modifier = Modifier.heightIn(min = HomeTokens.Target)
+                        .testTag("create-post").semantics { heading() }) {
+                    LineIcon(HomeIcon.ADD, LocalContentColor.current, Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Đăng tin", style = MaterialTheme.typography.titleMedium)
+                }
                 BoxWithConstraints {
                     if (largeText || maxWidth < 300.dp) Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         ReportAction(true, reportAvailable && state.allowed, Modifier.fillMaxWidth(), shortWindow) { onReport(true) }
@@ -150,9 +158,8 @@ fun HomeScreen(
                         "Thử lại", { if (lastLoadWasMore && state.hasMore) more() else refresh() }, error = true, enabled = !state.loading)
                 }
                 if (!state.loading && state.error == null && state.posts.isEmpty()) item(key = "empty") {
-                    FeedNotice("Chưa có tin", "Khi có bài đăng mới, bạn sẽ thấy ở đây.",
-                        if (reportAvailable) "Báo mất đồ" else "Làm mới",
-                        { if (reportAvailable) onReport(true) else refresh() })
+                    FeedNotice("Chưa có tin", "Khi có bài đăng mới, bạn sẽ thấy ở đây.", "Đăng tin",
+                        { onReport(true) }, enabled = reportAvailable)
                 }
                 if (!state.loading && state.error == null && state.posts.isNotEmpty() && visible.isEmpty()) item(key = "no-match") {
                     FeedNotice("Chưa thấy tin phù hợp", "Không có kết quả trong ${state.posts.size} tin đã tải. Thử từ khóa hoặc loại tin khác.",

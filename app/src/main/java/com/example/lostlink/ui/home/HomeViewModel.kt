@@ -31,13 +31,16 @@ class HomeViewModel : ViewModel() {
     private var identity: String? = null
     private var session = 0
     private var feedRequest = 0
+    private var refreshPending = false
+    private var closed = false
     private val authListener = FirebaseAuth.IdTokenListener {
         val user = it.currentUser
         val next = user?.uid?.takeIf { accounts.isUserLoggedInAndVerified }
-        if (next != identity) {
+        if (!closed && next != identity) {
             identity = next
             session++
             feedRequest++
+            refreshPending = false
             cursor = null
             state = HomeState(allowed = next != null)
             if (next != null) load()
@@ -46,9 +49,22 @@ class HomeViewModel : ViewModel() {
 
     init { auth.addIdTokenListener(authListener) }
 
+    fun refreshAfterPostCreated() {
+        if (closed || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return
+        refreshPending = true
+        refreshIfPending()
+    }
+
+    private fun refreshIfPending() {
+        if (refreshPending && !state.loading) {
+            refreshPending = false
+            load()
+        }
+    }
+
     fun load(more: Boolean = false) {
-        if (!accounts.isUserLoggedInAndVerified) return
-        if (more && (state.loading || !state.hasMore)) return
+        if (closed || state.loading || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return
+        if (more && !state.hasMore) return
         val version = ++feedRequest
         val accountSession = session
         val after = if (more) cursor else null
@@ -59,9 +75,11 @@ class HomeViewModel : ViewModel() {
             .orderBy(FieldPath.documentId(), Query.Direction.DESCENDING).limit(21)
         if (after != null) query = query.startAfter(after)
         query.get(Source.SERVER).addOnCompleteListener { task ->
-            if (version != feedRequest || accountSession != session || !accounts.isUserLoggedInAndVerified) return@addOnCompleteListener
+            if (closed || version != feedRequest || accountSession != session ||
+                !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return@addOnCompleteListener
             if (!task.isSuccessful) {
                 state = state.copy(loading = false, error = "Chưa tải được tin. Vui lòng kiểm tra kết nối và thử lại.")
+                refreshIfPending()
                 return@addOnCompleteListener
             }
             val documents = task.result.documents
@@ -75,8 +93,14 @@ class HomeViewModel : ViewModel() {
                 }.onFailure {
                     state = state.copy(loading = false, error = "Một bài đăng thiếu thông tin bắt buộc. Vui lòng thử lại sau.")
                 }
+            refreshIfPending()
         }
     }
 
-    override fun onCleared() { auth.removeIdTokenListener(authListener) }
+    override fun onCleared() {
+        closed = true
+        refreshPending = false
+        feedRequest++
+        auth.removeIdTokenListener(authListener)
+    }
 }
