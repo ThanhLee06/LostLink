@@ -3,7 +3,7 @@ package com.example.lostlink.ui.home
 import java.text.Normalizer
 import java.util.Locale
 
-enum class HomePostFilter(val label: String) { ALL("Tất cả"), LOST("Mất đồ"), FOUND("Nhặt được") }
+enum class HomePostFilter(val label: String) { ALL("Tất cả"), LOST("Cần tìm (Mất đồ)"), FOUND("Nhặt được đồ") }
 
 private val accentMarks = Regex("\\p{M}+")
 internal fun foldHomeSearch(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)

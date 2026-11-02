@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -37,6 +38,7 @@ fun HomeScreen(
     onAccount: (() -> Unit)? = null,
     searchRequest: Int = 0,
     homeRequest: Int = 0,
+    resetSearchRequest: Int = 0,
     onSearchActive: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -47,6 +49,7 @@ fun HomeScreen(
     var lastLoadWasMore by rememberSaveable { mutableStateOf(false) }
     var consumedSearchRequest by rememberSaveable { mutableIntStateOf(0) }
     var consumedHomeRequest by rememberSaveable { mutableIntStateOf(0) }
+    var consumedResetSearchRequest by rememberSaveable { mutableIntStateOf(0) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -65,11 +68,14 @@ fun HomeScreen(
             keyboard?.show()
         }
     }
-    LaunchedEffect(homeRequest) {
-        if (homeRequest > consumedHomeRequest) {
+    LaunchedEffect(homeRequest, resetSearchRequest) {
+        if (resetSearchRequest > consumedResetSearchRequest) {
             search = TextFieldValue()
             filter = HomePostFilter.ALL
             lastLoadWasMore = false
+            consumedResetSearchRequest = resetSearchRequest
+        }
+        if (homeRequest > consumedHomeRequest) {
             focusManager.clearFocus()
             keyboard?.hide()
             withFrameNanos { }
@@ -77,7 +83,7 @@ fun HomeScreen(
             consumedHomeRequest = homeRequest
         }
     }
-    LaunchedEffect(search.text, searchFocused) { onSearchActive(search.text.isNotBlank() || searchFocused) }
+    LaunchedEffect(searchFocused) { onSearchActive(searchFocused) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.background)) {
         val gutter = if (maxWidth >= 600.dp) 32.dp else HomeTokens.Gutter
@@ -139,9 +145,7 @@ fun HomeScreen(
             if (!deferUnavailableActions) item(key = "report") { reportContent() }
             item(key = "heading") {
                 FeedHeading(searching, visible.size, state.allowed, state.loading, filter, shortWindow,
-                    onRefresh = ::refresh, onFilter = { candidate ->
-                        filter = if (filter == candidate && candidate != HomePostFilter.ALL) HomePostFilter.ALL else candidate
-                    })
+                    onRefresh = ::refresh, onFilter = { filter = it })
             }
             if (!state.allowed) item(key = "auth") {
                 FeedNotice("Cùng tìm lại đồ thất lạc", "Đăng nhập bằng tài khoản UTH đã xác minh để xem bài đăng trong cộng đồng.", "Đăng nhập", onSignIn)
@@ -260,10 +264,11 @@ private fun FeedHeading(searching: Boolean, count: Int, allowed: Boolean, loadin
 @Composable
 private fun HomeFilters(filter: HomePostFilter, enabled: Boolean, onFilter: (HomePostFilter) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         HomePostFilter.entries.forEach { candidate ->
             FilterChip(selected = filter == candidate, onClick = { onFilter(candidate) }, enabled = enabled,
-                modifier = Modifier.heightIn(min = HomeTokens.Target).testTag("filter-${candidate.name}"),
+                modifier = Modifier.heightIn(min = HomeTokens.Target).testTag("filter-${candidate.name}")
+                    .semantics { role = Role.RadioButton },
                 label = { Text(candidate.label, style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = if (filter == candidate) ({ LineIcon(HomeIcon.CHECK, colors.onPrimaryContainer, Modifier.size(16.dp)) }) else null,
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = colors.primaryContainer,
