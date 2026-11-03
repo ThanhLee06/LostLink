@@ -25,6 +25,8 @@ data class HomePost(
 ) {
     val isLost get() = type == "LOST"
     val typeLabel get() = if (isLost) "Mất" else "Tìm thấy"
+    val isResolved get() = status.equals("RESOLVED", true) || status.equals("CLOSED", true) || status.equals("COMPLETED", true) || status.equals("HOAN_TAT", true)
+    val isOpened get() = !isResolved
 
     companion object {
         fun fromDocument(id: String, data: Map<String, Any?>): HomePost {

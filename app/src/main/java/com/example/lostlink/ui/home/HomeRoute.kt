@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.lostlink.ui.profile.ProfileScreen
+import com.example.lostlink.ui.profile.ProfileViewModel
 
 @Composable
 fun HomeRoute(
@@ -29,7 +32,6 @@ fun HomeRoute(
     val context = LocalContext.current
     val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var showAccount by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var searchRequest by rememberSaveable { mutableIntStateOf(0) }
     var homeRequest by rememberSaveable { mutableIntStateOf(0) }
@@ -61,35 +63,37 @@ fun HomeRoute(
                 Toast.makeText(context, "Chức năng đăng tin sẽ được bổ sung sau.", Toast.LENGTH_SHORT).show()
             }
             3 -> Toast.makeText(context, "Chức năng tin nhắn sẽ được bổ sung sau.", Toast.LENGTH_SHORT).show()
-            4 -> if (onSignOut != null) showAccount = true
+            4 -> { onReturnHome(); selected = 4 }
         }
     }
     HomeTheme {
         HomeSystemBars()
         Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets.safeDrawing,
-            bottomBar = { HomeNavigation(selected, showAccount, model.state.allowed, onSignOut != null, ::select) }) { padding ->
+            bottomBar = { HomeNavigation(selected, selected == 4, model.state.allowed, onSignOut != null, ::select) }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                if (detailContent != null) detailContent() else savedScreens.SaveableStateProvider("home") {
+                if (detailContent != null) detailContent() else if (selected == 4 && onSignOut != null) {
+                    savedScreens.SaveableStateProvider("profile") {
+                        val profileViewModel = viewModel<ProfileViewModel>()
+                        ProfileScreen(
+                            viewModel = profileViewModel,
+                            onPost = { onPost?.invoke(it) },
+                            onSignOut = { onSignOut() }
+                        )
+                    }
+                } else savedScreens.SaveableStateProvider("home") {
                     HomeScreen(state = model.state,
                         onPost = { onPost?.invoke(it) },
                         onRefresh = { if (!model.state.loading) model.load() },
                         onMore = { if (!model.state.loading) model.load(true) },
                         onSignIn = { onSignOut?.invoke() }, onReport = ::createPost,
                         canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
-                        onAccount = if (onSignOut != null) ({ showAccount = true }) else null,
+                        onAccount = if (onSignOut != null) ({ select(4) }) else null,
                         searchRequest = searchRequest, homeRequest = homeRequest, resetSearchRequest = resetSearchRequest,
                         onSearchActive = { active -> if (active) selected = 1 },
                     )
                 }
             }
         }
-        if (showAccount) AlertDialog(onDismissRequest = { showAccount = false }, title = { Text("Tài khoản") },
-            text = { Text("Bạn có muốn đăng xuất khỏi LostLink?") },
-            confirmButton = {
-                TextButton(onClick = { showAccount = false; onSignOut?.invoke() }) {
-                    Text("Đăng xuất", color = MaterialTheme.colorScheme.error)
-                }
-            }, dismissButton = { TextButton(onClick = { showAccount = false }) { Text("Ở lại") } })
     }
 }
 

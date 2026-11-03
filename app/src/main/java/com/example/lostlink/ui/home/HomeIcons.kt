@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 
-enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK, LINK, LOCK, EMAIL, BADGE, EYE, EYE_OFF, CLOSE, REFRESH, FILTER }
+enum class HomeIcon { HOME, SEARCH, ADD, CHAT, PERSON, BOX, SCAN, CHEVRON, CHECK, PIN, CLOCK, BACK, BOOKMARK, SHARE, PHOTO, CALENDAR, DESK, LINK, LOCK, EMAIL, BADGE, EYE, EYE_OFF, CLOSE, REFRESH, FILTER, LOGOUT, BELL, HELP }
 
 @Composable
 fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifier = Modifier.size(20.dp)) {
@@ -90,6 +90,30 @@ fun LineIcon(icon: HomeIcon, color: Color = Color(0xFF85858D), modifier: Modifie
                     val p = Path().apply { moveTo(2f, 12f); cubicTo(6f, 6f, 18f, 6f, 22f, 12f); cubicTo(18f, 18f, 6f, 18f, 2f, 12f) }
                     drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
                     line(3f, 3f, 21f, 21f)
+                }
+                HomeIcon.LOGOUT -> {
+                    line(16f, 12f, 4f, 12f); line(9f, 7f, 4f, 12f, 9f, 17f)
+                    val p = Path().apply { moveTo(12f, 4f); lineTo(19f, 4f); lineTo(19f, 20f); lineTo(12f, 20f) }
+                    drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                }
+                HomeIcon.BELL -> {
+                    val p = Path().apply {
+                        moveTo(18f, 16f); lineTo(18f, 11f); cubicTo(18f, 7.5f, 15.5f, 4.5f, 12f, 4.5f)
+                        cubicTo(8.5f, 4.5f, 6f, 7.5f, 6f, 11f); lineTo(6f, 16f); lineTo(4f, 16f); lineTo(4f, 17.5f)
+                        lineTo(20f, 17.5f); lineTo(20f, 16f); close()
+                    }
+                    drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                    val cl = Path().apply { moveTo(10f, 18f); cubicTo(10f, 19.5f, 14f, 19.5f, 14f, 18f) }
+                    drawPath(cl, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                }
+                HomeIcon.HELP -> {
+                    circle(12f, 12f, 9f)
+                    val p = Path().apply {
+                        moveTo(9.5f, 9f); cubicTo(9.5f, 7.5f, 14.5f, 7.5f, 14.5f, 9.5f)
+                        cubicTo(14.5f, 11.5f, 12f, 11.5f, 12f, 13.5f)
+                    }
+                    drawPath(p, color, style = Stroke(1.5f, cap = StrokeCap.Round))
+                    circle(12f, 16.5f, 1f)
                 }
             }
         }
