@@ -45,6 +45,7 @@ fun HomeScreen(
     val colors = MaterialTheme.colorScheme
     var search by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     var filter by rememberSaveable { mutableStateOf(HomePostFilter.ALL) }
+    var timeFilter by rememberSaveable { mutableStateOf(HomeTimeFilter.ALL) }
     var categories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var areas by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var searchFocused by remember { mutableStateOf(false) }
@@ -56,10 +57,12 @@ fun HomeScreen(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val largeText = LocalDensity.current.fontScale > 1.3f
-    val visible = remember(state.posts, search.text, filter, categories, areas) {
-        filterLoadedHomePosts(state.posts, search.text, filter, categories, areas)
+    val timeTick = rememberHomeFilterTime(timeFilter)
+    val visible = remember(state.posts, search.text, filter, categories, areas, timeFilter, timeTick) {
+        filterLoadedHomePosts(state.posts, search.text, filter, categories, areas, timeFilter)
     }
-    val searching = search.text.isNotBlank() || filter != HomePostFilter.ALL || categories.isNotEmpty() || areas.isNotEmpty()
+    val searching = search.text.isNotBlank() || filter != HomePostFilter.ALL || timeFilter != HomeTimeFilter.ALL ||
+        categories.isNotEmpty() || areas.isNotEmpty()
     fun refresh() { if (!state.loading) { lastLoadWasMore = false; onRefresh() } }
     fun more() { if (!state.loading) { lastLoadWasMore = true; onMore() } }
     LaunchedEffect(searchRequest, state.allowed) {
@@ -76,6 +79,7 @@ fun HomeScreen(
         if (resetSearchRequest > consumedResetSearchRequest) {
             search = TextFieldValue()
             filter = HomePostFilter.ALL
+            timeFilter = HomeTimeFilter.ALL
             categories = emptyList()
             areas = emptyList()
             lastLoadWasMore = false
@@ -154,6 +158,7 @@ fun HomeScreen(
                     FeedHeading(searching, visible.size, state.allowed, state.loading, filter, shortWindow,
                         onRefresh = ::refresh, onFilter = { filter = it })
                     HomeAdvancedFilters(categories, areas, state.allowed, visible.size, { categories = it }, { areas = it })
+                    HomeTimeFilters(timeFilter, state.allowed) { timeFilter = it }
                 }
             }
             if (!state.allowed) item(key = "auth") {
@@ -175,8 +180,9 @@ fun HomeScreen(
                         { onReport(true) }, enabled = reportAvailable)
                 }
                 if (!state.loading && state.error == null && state.posts.isNotEmpty() && visible.isEmpty()) item(key = "no-match") {
-                    FeedNotice("Chưa thấy tin phù hợp", "Không có kết quả trong ${state.posts.size} tin đã tải. Thử thay đổi từ khóa, loại tin, danh mục hoặc khu vực.",
-                        "Xóa bộ lọc", { search = TextFieldValue(); filter = HomePostFilter.ALL; categories = emptyList(); areas = emptyList() })
+                    FeedNotice("Chưa thấy tin phù hợp", "Không có kết quả trong ${state.posts.size} tin đã tải. Thử thay đổi từ khóa hoặc bộ lọc.",
+                        "Xóa bộ lọc", { search = TextFieldValue(); filter = HomePostFilter.ALL; timeFilter = HomeTimeFilter.ALL;
+                            categories = emptyList(); areas = emptyList() })
                 }
                 items(visible, key = { "post:${it.id}" }, contentType = { "post-card" }) { post ->
                     HomePostCard(post, if (canOpenPosts) ({ onPost(post.id) }) else null)
