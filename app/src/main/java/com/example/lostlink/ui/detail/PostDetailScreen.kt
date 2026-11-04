@@ -81,9 +81,33 @@ private fun DetailContent(detail: PostDetail) {
                         Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
                             LineIcon(HomeIcon.PERSON, MaterialTheme.colorScheme.onPrimaryContainer, Modifier.size(24.dp))
                         }
-                        Text(post.authorName.takeUnless { it.contains('@') }.orEmpty().ifBlank { "Chưa có tên hiển thị" },
-                            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f).testTag("detail-author"))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = post.authorName.ifBlank { "Sinh viên UTH" },
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.testTag("detail-author")
+                            )
+                            if (post.allowContact && post.contactEmail.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    LineIcon(HomeIcon.EMAIL, MaterialTheme.colorScheme.primary, Modifier.size(16.dp))
+                                    Text(
+                                        text = post.contactEmail,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "Email liên hệ: Ẩn theo cài đặt riêng tư",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
