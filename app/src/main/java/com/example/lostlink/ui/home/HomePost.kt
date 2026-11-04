@@ -22,6 +22,9 @@ data class HomePost(
     val categoryId: String = "",
     val category: String = "",
     val areaId: String = "",
+    val contactEmail: String = "",
+    val allowContact: Boolean = false,
+    val authorId: String = "",
 ) {
     val isLost get() = type == "LOST"
     val typeLabel get() = if (isLost) "Mất" else "Tìm thấy"
@@ -38,12 +41,32 @@ data class HomePost(
                 ?: error("Missing posting timestamp")
             val photos = (data["imageUrls"] as? List<*>)?.filterIsInstance<String>().orEmpty() +
                 listOf(text("imageUrl"), text("imageUri"))
+            val contactEmail = text("contactEmail")
+            val allowContact = (data["allowContact"] as? Boolean)
+                ?: (data["allowEmailContact"] as? Boolean)
+                ?: contactEmail.isNotBlank()
+            val authorName = text("authorName")
+            val authorId = text("authorId")
+
             return HomePost(
-                id, title, type, text("location").ifBlank { "Chưa cập nhật địa điểm" }, createdAt,
-                text("description"), text("occurredAt"), photos.distinct().filter(::isPublicImage),
-                text("authorName"), text("contactPhone"), text("pickupLocation"),
-                text("status").ifBlank { "OPEN" },
-                text("categoryId"), text("category"), text("areaId"),
+                id = id,
+                title = title,
+                type = type,
+                location = text("location").ifBlank { "Chưa cập nhật địa điểm" },
+                createdAt = createdAt,
+                description = text("description"),
+                occurredAt = text("occurredAt"),
+                images = photos.distinct().filter(::isPublicImage),
+                authorName = authorName,
+                contactPhone = text("contactPhone"),
+                pickupLocation = text("pickupLocation"),
+                status = text("status").ifBlank { "OPEN" },
+                categoryId = text("categoryId"),
+                category = text("category"),
+                areaId = text("areaId"),
+                contactEmail = contactEmail,
+                allowContact = allowContact,
+                authorId = authorId
             )
         }
 
