@@ -61,6 +61,8 @@ data class ProfileState(
     val selectedTab: ProfilePostTab = ProfilePostTab.OPEN,
     val notificationsEnabled: Boolean = true,
     val isSavingName: Boolean = false,
+    val emailContactLoaded: Boolean = false,
+    val isSavingEmailContact: Boolean = false,
 ) {
     val openPostsCount get() = userPosts.count { !it.isResolved }
     val completedPostsCount get() = userPosts.count { it.isResolved }
