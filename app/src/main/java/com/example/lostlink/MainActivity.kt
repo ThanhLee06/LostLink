@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
                 HomeRoute(
                     model = model,
                     onPost = { selectedPostId = it },
-                    detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail) }) },
+                    detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail, currentUserId = accountId) }) },
                     onReturnHome = ::closeDetail,
                     onSignOut = {
                         closeDetail()
