@@ -227,7 +227,6 @@ fun PostFormWhereWhen(
             }
         }
 
-        // Mô tả chi tiết vị trí
         OutlinedTextField(
             value = state.locationNote,
             onValueChange = onLocationNoteChange,
@@ -259,7 +258,7 @@ fun PostFormWhereWhen(
             thickness = 1.dp
         )
 
-        // ───────── THỜI GIAN ─────────
+        // THỜI GIAN
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -558,8 +557,6 @@ private fun DateTimeField(
                 TextButton(onClick = {
                     val base = pickedDate
                     if (base != null) {
-                        // DatePicker trả về 0h UTC của ngày đã chọn, nên đọc ngày theo UTC
-                        // rồi ghép giờ/phút theo múi giờ của máy
                         val utc = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                             .apply { timeInMillis = base }
                         val local = Calendar.getInstance().apply {

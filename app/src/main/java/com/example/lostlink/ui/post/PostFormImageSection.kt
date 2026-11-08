@@ -226,7 +226,7 @@ fun PostFormImageSection(
                 }
             }
         } else {
-            // Khi đã chọn ảnh: hiển thị ảnh xem trước (Preview) và các nút Thay đổi / Xóa
+            // hiển thị ảnh xem trước
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -257,7 +257,6 @@ fun PostFormImageSection(
                             modifier = Modifier.matchParentSize()
                         )
 
-                        // Huy hiệu đã chọn ảnh góc trên phải
                         Surface(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
@@ -289,7 +288,7 @@ fun PostFormImageSection(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Các nút thao tác với ảnh: Thay đổi hoặc Xóa bỏ
+                    // Thay đổi hoặc Xóa bỏ
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -334,7 +333,7 @@ fun PostFormImageSection(
         }
     }
 
-    // Bottom Sheet: Lựa chọn nguồn ảnh hoặc Hủy bỏ (hỗ trợ bấm ra bên ngoài để đóng)
+    // Lựa chọn nguồn ảnh hoặc Hủy bỏ 
     if (showSourceSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSourceSheet = false },
@@ -377,7 +376,7 @@ fun PostFormImageSection(
                     color = MaterialTheme.colorScheme.outline
                 )
 
-                // Lựa chọn 1: Thư viện ảnh (Photo Picker)
+                // Thư viện ảnh
                 Surface(
                     onClick = {
                         showSourceSheet = false
@@ -433,7 +432,7 @@ fun PostFormImageSection(
                     }
                 }
 
-                // Lựa chọn 2: Bộ nhớ máy / Trình quản lý tệp (GetContent)
+                // Bộ nhớ máy
                 Surface(
                     onClick = {
                         showSourceSheet = false
@@ -487,7 +486,6 @@ fun PostFormImageSection(
                     }
                 }
 
-                // Nút Hủy nếu không muốn chọn ảnh
                 OutlinedButton(
                     onClick = { showSourceSheet = false },
                     modifier = Modifier

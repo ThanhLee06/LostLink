@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Lock
@@ -90,7 +91,8 @@ fun MyPostsScreen(
     onPostClick: (String) -> Unit,
     onCreatePostClick: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: MyPostsViewModel = viewModel()
+    viewModel: MyPostsViewModel = viewModel(),
+    onEditPostClick: ((HomePost) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -324,6 +326,7 @@ fun MyPostsScreen(
                                 MyPostCard(
                                     post = post,
                                     onClick = { onPostClick(post.id) },
+                                    onEditClick = { onEditPostClick?.invoke(post) },
                                     onToggleStatus = {
                                         val newStatus = if (post.status.equals("RESOLVED", ignoreCase = true) ||
                                             post.status.equals("CLOSED", ignoreCase = true)
@@ -345,6 +348,7 @@ fun MyPostsScreen(
 private fun MyPostCard(
     post: HomePost,
     onClick: () -> Unit,
+    onEditClick: () -> Unit,
     onToggleStatus: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -542,16 +546,29 @@ private fun MyPostCard(
                     )
                 }
 
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.DeleteOutline,
-                        contentDescription = "Xoá bài đăng",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onEditClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = "Chỉnh sửa bài đăng",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.DeleteOutline,
+                            contentDescription = "Xoá bài đăng",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

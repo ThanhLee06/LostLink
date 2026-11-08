@@ -18,7 +18,6 @@ data class PostDetailState(
 fun isValidPostId(id: String): Boolean = id.isNotBlank() && id !in listOf(".", "..") &&
     '/' !in id && id.toByteArray(Charsets.UTF_8).size <= 1_500 && !id.matches(Regex("__.*__"))
 
-/** Both the account session and selected document must still match a completed read. */
 class PostDetailViewModel(private val source: PostDetailSource = FirebasePostDetailSource()) : ViewModel() {
     var state by mutableStateOf(PostDetailState())
         private set

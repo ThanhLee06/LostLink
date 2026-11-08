@@ -22,6 +22,7 @@ data class HomePost(
     val categoryId: String = "",
     val category: String = "",
     val areaId: String = "",
+    val authorId: String = "",
 ) {
     val isLost get() = type == "LOST"
     val typeLabel get() = if (isLost) "Mất" else "Tìm thấy"
@@ -42,6 +43,7 @@ data class HomePost(
                 text("authorName"), text("contactPhone"), text("pickupLocation"),
                 text("status").ifBlank { "OPEN" },
                 text("categoryId"), text("category"), text("areaId"),
+                text("authorId"),
             )
         }
 

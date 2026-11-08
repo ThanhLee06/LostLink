@@ -21,8 +21,16 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun PostDetailScreen(state: PostDetailState, onBack: () -> Unit, onRetry: () -> Unit) {
+fun PostDetailScreen(
+    state: PostDetailState,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onEditPost: ((HomePost) -> Unit)? = null
+) {
     val colors = MaterialTheme.colorScheme
+    val currentUserId = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
+    val isOwner = state.detail != null && state.detail.post.authorId.isNotBlank() && state.detail.post.authorId == currentUserId
+
     Column(Modifier.fillMaxSize().background(colors.background).testTag("post-detail")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(HomeTokens.Target)
@@ -31,7 +39,13 @@ fun PostDetailScreen(state: PostDetailState, onBack: () -> Unit, onRetry: () -> 
             }
             Text("Chi tiết tin", style = MaterialTheme.typography.titleMedium, color = colors.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f).semantics { heading() })
-            Spacer(Modifier.width(HomeTokens.Target))
+            if (isOwner && onEditPost != null) {
+                TextButton(onClick = { state.detail?.post?.let { onEditPost(it) } }) {
+                    Text("Chỉnh sửa", color = colors.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+            } else {
+                Spacer(Modifier.width(HomeTokens.Target))
+            }
         }
         Box(Modifier.weight(1f)) {
             when (state.status) {
@@ -41,7 +55,7 @@ fun PostDetailScreen(state: PostDetailState, onBack: () -> Unit, onRetry: () -> 
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                     Text("Đang tải bài đăng…", color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
-                DetailStatus.READY -> state.detail?.let { detail -> key(detail.post.id) { DetailContent(detail) } }
+                DetailStatus.READY -> state.detail?.let { detail -> key(detail.post.id) { DetailContent(detail, isOwner, onEditPost) } }
                 else -> DetailFailure(state, onBack, onRetry)
             }
         }
@@ -49,7 +63,11 @@ fun PostDetailScreen(state: PostDetailState, onBack: () -> Unit, onRetry: () -> 
 }
 
 @Composable
-private fun DetailContent(detail: PostDetail) {
+private fun DetailContent(
+    detail: PostDetail,
+    isOwner: Boolean = false,
+    onEditPost: ((HomePost) -> Unit)? = null
+) {
     val post = detail.post
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 700.dp && LocalDensity.current.fontScale <= 1.3f
@@ -61,10 +79,10 @@ private fun DetailContent(detail: PostDetail) {
             item(key = "overview") {
                 if (wide) Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                     PostDetailGallery(post.images, post.title, Modifier.weight(1f), wide = true)
-                    DetailSummary(post, Modifier.weight(1f))
+                    DetailSummary(post, Modifier.weight(1f), isOwner, onEditPost)
                 } else Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     PostDetailGallery(post.images, post.title)
-                    DetailSummary(post)
+                    DetailSummary(post, isOwner = isOwner, onEditPost = onEditPost)
                 }
             }
             item(key = "facts") { DetailFacts(detail) }
@@ -93,7 +111,12 @@ private fun DetailContent(detail: PostDetail) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailSummary(post: HomePost, modifier: Modifier = Modifier) {
+private fun DetailSummary(
+    post: HomePost,
+    modifier: Modifier = Modifier,
+    isOwner: Boolean = false,
+    onEditPost: ((HomePost) -> Unit)? = null
+) {
     val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -114,6 +137,16 @@ private fun DetailSummary(post: HomePost, modifier: Modifier = Modifier) {
             else -> "Trạng thái: ${post.status}"
         }
         if (status != null) Text(status, color = colors.primary, style = MaterialTheme.typography.labelLarge)
+
+        if (isOwner && onEditPost != null) {
+            OutlinedButton(
+                onClick = { onEditPost(post) },
+                shape = HomeTokens.ImageShape,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+            ) {
+                Text("Chỉnh sửa bài viết", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
+        }
     }
 }
 

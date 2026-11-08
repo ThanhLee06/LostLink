@@ -50,7 +50,6 @@ class PostFormViewModel(
         it.copy(description = v, errors = it.errors.copy(description = null))
     }
 
-    // ───── Khu vực ─────
     fun onAreaChoiceChange(c: AreaChoice) = _state.update {
         it.copy(
             areaChoice = c,
@@ -70,7 +69,6 @@ class PostFormViewModel(
 
     fun onLocationNoteChange(v: String) = _state.update { it.copy(locationNote = v) }
 
-    // ───── Thời gian ─────
     fun onTimeModeChange(m: TimeMode) = _state.update {
         it.copy(
             timeMode = m,
@@ -98,9 +96,8 @@ class PostFormViewModel(
         it.copy(timeNote = v, errors = it.errors.copy(time = null))
     }
 
-    // ───── Hình ảnh ─────
     fun onImageSelected(uri: Uri?) = _state.update {
-        if (uri == null) it // Người dùng hủy chọn ảnh -> giữ nguyên state hiện tại
+        if (uri == null) it 
         else it.copy(imageUri = uri, uploadedImageUrl = null, errors = it.errors.copy(image = null))
     }
 
@@ -168,7 +165,7 @@ class PostFormViewModel(
 
             val stateSnapshot = _state.value
 
-            // 1. Tải ảnh nếu có
+            // Tải ảnh 
             val uploadResult = repository.uploadImageIfNeeded(
                 context = context,
                 imageUri = stateSnapshot.imageUri,
@@ -195,7 +192,6 @@ class PostFormViewModel(
                 )
             }
 
-            // 2. Lưu bài viết vào Firestore với clientPostId ổn định
             val createResult = repository.createPost(
                 state = _state.value,
                 imageUrl = uploadedUrl
@@ -225,9 +221,7 @@ class PostFormViewModel(
         }
     }
 
-    /**
-     * Dùng để test nhanh dữ liệu mẫu
-     */
+    // Dùng để test nhanh dữ liệu mẫu
     fun loadSampleData() {
         _state.value = PostFormState(
             type = PostType.LOST,

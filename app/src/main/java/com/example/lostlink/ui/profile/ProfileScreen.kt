@@ -119,7 +119,6 @@ fun ProfileScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Card Thông tin cá nhân
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -135,7 +134,6 @@ fun ProfileScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Avatar tròn với chữ cái đầu
                     Box(
                         modifier = Modifier
                             .size(76.dp)
@@ -177,7 +175,6 @@ fun ProfileScreen(
                         }
                     }
 
-                    // Badge Xác thực sinh viên
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = Color(0xFFE6F4EA)
@@ -204,7 +201,6 @@ fun ProfileScreen(
                 }
             }
 
-            // Danh sách chức năng
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -228,7 +224,7 @@ fun ProfileScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
 
-                    // Mục: Tạo tin mới
+                    //  Tạo tin mới
                     ProfileMenuItem(
                         icon = Icons.Outlined.PostAdd,
                         title = "Đăng tin mới",
@@ -241,7 +237,7 @@ fun ProfileScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
 
-                    // Mục: Đăng xuất
+                    //Đăng xuất
                     ProfileMenuItem(
                         icon = Icons.Outlined.Logout,
                         title = "Đăng xuất",

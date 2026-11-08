@@ -55,7 +55,7 @@ data class PostFormState(
 
     val errors: FormErrors = FormErrors(),
 
-    // Quản lý đăng bài & mã bài ổn định (ST10)
+    // Quản lý đăng bài & mã bài ổn định
     val clientPostId: String = java.util.UUID.randomUUID().toString(),
     val uploadedImageUrl: String? = null,
     val isSubmitting: Boolean = false,
@@ -95,7 +95,7 @@ object PostFormValidator {
     }
 
     private fun validateArea(s: PostFormState): String? = when (s.areaChoice) {
-        AreaChoice.KNOWN -> null // Không bắt buộc: nếu chưa chọn khu vực cụ thể thì lưu là chưa rõ
+        AreaChoice.KNOWN -> null 
         AreaChoice.OTHER -> if (s.areaOtherText.isBlank()) "Nhập tên khu vực hoặc chọn Không rõ" else null
         AreaChoice.UNKNOWN -> null
     }
