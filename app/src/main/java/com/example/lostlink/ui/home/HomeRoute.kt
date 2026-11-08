@@ -1,6 +1,7 @@
 package com.example.lostlink.ui.home
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -16,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.lostlink.ui.myposts.MyPostsScreen
+import com.example.lostlink.ui.profile.ProfileScreen
 
 @Composable
 fun HomeRoute(
@@ -29,7 +32,7 @@ fun HomeRoute(
     val context = LocalContext.current
     val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var showAccount by rememberSaveable { mutableStateOf(false) }
+    var showMyPosts by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var searchRequest by rememberSaveable { mutableIntStateOf(0) }
     var homeRequest by rememberSaveable { mutableIntStateOf(0) }
@@ -38,12 +41,18 @@ fun HomeRoute(
     fun createPost(lost: Boolean) {
         if (model.state.allowed && model.accounts.isUserLoggedInAndVerified) onCreatePost?.invoke(lost)
     }
+
+    BackHandler(enabled = selected == 4 && !showMyPosts && detailContent == null) {
+        selected = 0
+    }
+
     DisposableEffect(lifecycleOwner, activity, model) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME && activity != null) {
                 val accountId = model.accounts.currentUserId.takeIf { model.accounts.isUserLoggedInAndVerified }
                 if (HomePostCreation.consume(activity.intent, accountId)) {
                     selected = 0
+                    showMyPosts = false
                     homeRequest++
                     resetSearchRequest++
                     model.refreshAfterPostCreated()
@@ -55,41 +64,51 @@ fun HomeRoute(
     }
     fun select(index: Int) {
         when (index) {
-            0 -> { onReturnHome(); selected = 0; homeRequest++ }
-            1 -> { onReturnHome(); selected = 1; searchRequest++ }
+            0 -> { onReturnHome(); showMyPosts = false; selected = 0; homeRequest++ }
+            1 -> { onReturnHome(); showMyPosts = false; selected = 1; searchRequest++ }
             2 -> if (onCreatePost != null) createPost(true) else {
                 Toast.makeText(context, "Chức năng đăng tin sẽ được bổ sung sau.", Toast.LENGTH_SHORT).show()
             }
             3 -> Toast.makeText(context, "Chức năng tin nhắn sẽ được bổ sung sau.", Toast.LENGTH_SHORT).show()
-            4 -> if (onSignOut != null) showAccount = true
+            4 -> { onReturnHome(); showMyPosts = false; selected = 4 }
         }
     }
+    val isAccountTab = selected == 4 || showMyPosts
     HomeTheme {
         HomeSystemBars()
         Scaffold(containerColor = MaterialTheme.colorScheme.background, contentWindowInsets = WindowInsets.safeDrawing,
-            bottomBar = { HomeNavigation(selected, showAccount, model.state.allowed, onSignOut != null, ::select) }) { padding ->
+            bottomBar = { HomeNavigation(selected, isAccountTab, model.state.allowed, onSignOut != null, ::select) }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                if (detailContent != null) detailContent() else savedScreens.SaveableStateProvider("home") {
-                    HomeScreen(state = model.state,
-                        onPost = { onPost?.invoke(it) },
-                        onRefresh = { if (!model.state.loading) model.load() },
-                        onMore = { if (!model.state.loading) model.load(true) },
-                        onSignIn = { onSignOut?.invoke() }, onReport = ::createPost,
-                        canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
-                        onAccount = if (onSignOut != null) ({ showAccount = true }) else null,
-                        searchRequest = searchRequest, homeRequest = homeRequest, resetSearchRequest = resetSearchRequest,
-                        onSearchActive = { active -> if (active) selected = 1 },
+                if (detailContent != null) {
+                    detailContent()
+                } else if (showMyPosts) {
+                    MyPostsScreen(
+                        currentUserId = model.accounts.currentUserId,
+                        onBack = { showMyPosts = false },
+                        onPostClick = { onPost?.invoke(it) },
+                        onCreatePostClick = { createPost(true) }
                     )
+                } else when (selected) {
+                    4 -> ProfileScreen(
+                        onNavigateToMyPosts = { showMyPosts = true },
+                        onCreatePost = { createPost(true) },
+                        onSignOut = { onSignOut?.invoke() }
+                    )
+                    else -> savedScreens.SaveableStateProvider("home") {
+                        HomeScreen(state = model.state,
+                            onPost = { onPost?.invoke(it) },
+                            onRefresh = { if (!model.state.loading) model.load() },
+                            onMore = { if (!model.state.loading) model.load(true) },
+                            onSignIn = { onSignOut?.invoke() }, onReport = ::createPost,
+                            canOpenPosts = onPost != null, reportAvailable = onCreatePost != null,
+                            onAccount = if (onSignOut != null) ({ onReturnHome(); showMyPosts = false; selected = 4 }) else null,
+                            searchRequest = searchRequest, homeRequest = homeRequest, resetSearchRequest = resetSearchRequest,
+                            onSearchActive = { active -> if (active) selected = 1 },
+                        )
+                    }
                 }
             }
         }
-        if (showAccount) AlertDialog(onDismissRequest = { showAccount = false }, title = { Text("Tài khoản") },
-            text = { Text("Bạn có muốn đăng xuất khỏi LostLink?") },
-            confirmButton = {
-                TextButton(onClick = { showAccount = false; onSignOut?.invoke() }) {
-                    Text("Đăng xuất", color = MaterialTheme.colorScheme.error)
-                }
-            }, dismissButton = { TextButton(onClick = { showAccount = false }) { Text("Ở lại") } })
     }
 }
 

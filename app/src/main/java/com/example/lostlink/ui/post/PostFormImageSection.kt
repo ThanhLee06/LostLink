@@ -93,13 +93,12 @@ fun PostFormImageSection(
         }
     }
 
-    // 1. Photo Picker mới của hệ thống Android
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = handleUriResult
     )
 
-    // 2. Trình duyệt tệp/ảnh của thiết bị (truy cập bộ nhớ máy, thư mục Tải về, Google Drive, thẻ nhớ)
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = handleUriResult
@@ -137,7 +136,7 @@ fun PostFormImageSection(
             color = MaterialTheme.colorScheme.outline
         )
 
-        // Hiển thị thông báo lỗi (nếu có)
+
         AnimatedVisibility(
             visible = imageError != null,
             enter = fadeIn(),
@@ -171,7 +170,6 @@ fun PostFormImageSection(
         }
 
         if (imageUri == null) {
-            // Placeholder khi chưa có ảnh
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
