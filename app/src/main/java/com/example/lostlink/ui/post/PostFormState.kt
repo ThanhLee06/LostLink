@@ -53,7 +53,14 @@ data class PostFormState(
     val rangeEndMillis: Long? = null,
     val timeNote: String = "",
 
-    val errors: FormErrors = FormErrors()
+    val errors: FormErrors = FormErrors(),
+
+    // Quản lý đăng bài & mã bài ổn định (ST10)
+    val clientPostId: String = java.util.UUID.randomUUID().toString(),
+    val uploadedImageUrl: String? = null,
+    val isSubmitting: Boolean = false,
+    val submitProgress: String? = null,
+    val submitError: String? = null
 ) {
     val hasUnsavedChanges: Boolean
         get() = title.isNotBlank() || categoryId != null || description.isNotBlank()
@@ -78,8 +85,6 @@ object PostFormValidator {
             },
             category = if (s.categoryId == null) "Chọn danh mục cho món đồ" else null,
             description = when {
-                desc.isEmpty() -> "Mô tả vài đặc điểm để dễ nhận ra món đồ"
-                desc.length < DESCRIPTION_MIN -> "Mô tả hơi ngắn, thêm màu sắc hoặc kiểu dáng nhé"
                 desc.length > DESCRIPTION_MAX -> "Mô tả tối đa $DESCRIPTION_MAX ký tự"
                 else -> null
             },
@@ -90,8 +95,8 @@ object PostFormValidator {
     }
 
     private fun validateArea(s: PostFormState): String? = when (s.areaChoice) {
-        AreaChoice.KNOWN -> if (s.areaId == null) "Chọn khu vực, hoặc chọn Không rõ" else null
-        AreaChoice.OTHER -> if (s.areaOtherText.isBlank()) "Nhập tên khu vực" else null
+        AreaChoice.KNOWN -> null // Không bắt buộc: nếu chưa chọn khu vực cụ thể thì lưu là chưa rõ
+        AreaChoice.OTHER -> if (s.areaOtherText.isBlank()) "Nhập tên khu vực hoặc chọn Không rõ" else null
         AreaChoice.UNKNOWN -> null
     }
 

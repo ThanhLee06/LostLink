@@ -284,10 +284,27 @@ fun PostFormHeader(
             thickness = 1.dp
         )
 
-        FormSectionLabel(
-            icon = Icons.Outlined.Description,
-            title = "Đặc điểm nhận diện"
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(
+                icon = Icons.Outlined.Description,
+                title = "Đặc điểm nhận diện"
+            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         OutlinedTextField(
             value = state.description,

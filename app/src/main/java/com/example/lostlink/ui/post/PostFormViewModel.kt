@@ -1,14 +1,23 @@
 package com.example.lostlink.ui.post
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.lostlink.data.PostCreationDataSource
+import com.example.lostlink.data.PostRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
 
-class PostFormViewModel : ViewModel() {
+class PostFormViewModel(
+    private val repositoryProvider: () -> PostCreationDataSource = { PostRepository() }
+) : ViewModel() {
 
+    private val repository by lazy { repositoryProvider() }
     private val _state = MutableStateFlow(PostFormState())
     val state: StateFlow<PostFormState> = _state.asStateFlow()
 
@@ -17,7 +26,13 @@ class PostFormViewModel : ViewModel() {
     fun bindUser(uid: String?) {
         if (uid != ownerUid) {
             ownerUid = uid
-            _state.value = PostFormState()
+            clearDraft()
+        }
+    }
+
+    fun setInitialType(isLost: Boolean) {
+        if (!_state.value.hasUnsavedChanges) {
+            _state.update { it.copy(type = if (isLost) PostType.LOST else PostType.FOUND) }
         }
     }
 
@@ -86,11 +101,11 @@ class PostFormViewModel : ViewModel() {
     // ───── Hình ảnh ─────
     fun onImageSelected(uri: Uri?) = _state.update {
         if (uri == null) it // Người dùng hủy chọn ảnh -> giữ nguyên state hiện tại
-        else it.copy(imageUri = uri, errors = it.errors.copy(image = null))
+        else it.copy(imageUri = uri, uploadedImageUrl = null, errors = it.errors.copy(image = null))
     }
 
     fun onRemoveImage() = _state.update {
-        it.copy(imageUri = null, errors = it.errors.copy(image = null))
+        it.copy(imageUri = null, uploadedImageUrl = null, errors = it.errors.copy(image = null))
     }
 
     fun onImageError(errorMsg: String) = _state.update {
@@ -101,6 +116,10 @@ class PostFormViewModel : ViewModel() {
         it.copy(errors = it.errors.copy(image = null))
     }
 
+    fun clearSubmitError() = _state.update {
+        it.copy(submitError = null)
+    }
+
     fun validate(): Boolean {
         val errors = PostFormValidator.validate(_state.value)
         _state.update { it.copy(errors = errors) }
@@ -108,7 +127,102 @@ class PostFormViewModel : ViewModel() {
     }
 
     fun clearDraft() {
-        _state.value = PostFormState()
+        _state.value = PostFormState(clientPostId = UUID.randomUUID().toString())
+    }
+
+   
+    fun submitPost(
+        context: Context,
+        onSuccess: (postId: String) -> Unit
+    ) {
+        val current = _state.value
+        if (current.isSubmitting) return
+
+        if (!validate()) {
+            val firstError = listOfNotNull(
+                _state.value.errors.title,
+                _state.value.errors.category,
+                _state.value.errors.description,
+                _state.value.errors.area,
+                _state.value.errors.time,
+                _state.value.errors.image
+            ).firstOrNull() ?: "Vui lòng điền đầy đủ các thông tin bắt buộc"
+            try {
+                android.widget.Toast.makeText(context, firstError, android.widget.Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {}
+            return
+        }
+
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    isSubmitting = true,
+                    submitError = null,
+                    submitProgress = if (it.imageUri != null && it.uploadedImageUrl == null) {
+                        "Đang tải ảnh lên..."
+                    } else {
+                        "Đang lưu bài đăng..."
+                    }
+                )
+            }
+
+            val stateSnapshot = _state.value
+
+            // 1. Tải ảnh nếu có
+            val uploadResult = repository.uploadImageIfNeeded(
+                context = context,
+                imageUri = stateSnapshot.imageUri,
+                cachedUrl = stateSnapshot.uploadedImageUrl
+            )
+
+            if (uploadResult.isFailure) {
+                val errorMsg = uploadResult.exceptionOrNull()?.localizedMessage ?: "Tải ảnh thất bại."
+                _state.update {
+                    it.copy(
+                        isSubmitting = false,
+                        submitError = errorMsg,
+                        submitProgress = null
+                    )
+                }
+                return@launch
+            }
+
+            val uploadedUrl = uploadResult.getOrNull()
+            _state.update {
+                it.copy(
+                    uploadedImageUrl = uploadedUrl,
+                    submitProgress = "Đang lưu bài viết vào hệ thống..."
+                )
+            }
+
+            // 2. Lưu bài viết vào Firestore với clientPostId ổn định
+            val createResult = repository.createPost(
+                state = _state.value,
+                imageUrl = uploadedUrl
+            )
+
+            if (createResult.isSuccess) {
+                val createdPostId = createResult.getOrThrow()
+                _state.update {
+                    it.copy(
+                        isSubmitting = false,
+                        submitProgress = null,
+                        submitError = null
+                    )
+                }
+                clearDraft()
+                onSuccess(createdPostId)
+            } else {
+                val errorMsg = createResult.exceptionOrNull()?.localizedMessage ?: "Lưu bài viết thất bại."
+                _state.update {
+                    it.copy(
+                        isSubmitting = false,
+                        submitError = errorMsg,
+                        submitProgress = null
+                    )
+                }
+            }
+        }
     }
 
     /**

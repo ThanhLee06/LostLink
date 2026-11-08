@@ -117,7 +117,24 @@ fun PostFormWhereWhen(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         // ───────── KHU VỰC ─────────
-        FormSectionLabel(Icons.Outlined.Place, state.type.areaLabel())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(Icons.Outlined.Place, state.type.areaLabel())
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -243,7 +260,24 @@ fun PostFormWhereWhen(
         )
 
         // ───────── THỜI GIAN ─────────
-        FormSectionLabel(Icons.Outlined.AccessTime, state.type.timeLabel())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(Icons.Outlined.AccessTime, state.type.timeLabel())
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
