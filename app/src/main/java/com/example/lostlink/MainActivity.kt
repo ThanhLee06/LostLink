@@ -23,6 +23,8 @@ import com.example.lostlink.ui.home.HomeViewModel
 import com.example.lostlink.ui.detail.PostDetailNavigation
 import com.example.lostlink.ui.detail.PostDetailRoute
 import com.example.lostlink.ui.detail.PostDetailViewModel
+import com.example.lostlink.ui.post.PostFormScreen
+import com.example.lostlink.ui.post.PostFormViewModel
 import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
@@ -37,6 +39,7 @@ class MainActivity : ComponentActivity() {
         )
         val model = ViewModelProvider(this)[HomeViewModel::class.java]
         val detailModel = ViewModelProvider(this)[PostDetailViewModel::class.java]
+        val postFormModel = ViewModelProvider(this)[PostFormViewModel::class.java]
         setContent {
             val accounts = remember { FirebaseAccountRepository() }
             val auth = remember { FirebaseAuth.getInstance() }
@@ -52,6 +55,8 @@ class MainActivity : ComponentActivity() {
 
             if (accountId != null) key(accountId) {
                 var selectedPostId by rememberSaveable { mutableStateOf<String?>(null) }
+                var isCreatingPost by rememberSaveable { mutableStateOf(false) }
+
                 fun closeDetail() { selectedPostId = null; detailModel.clearSelection() }
                 LaunchedEffect(pendingPostId) {
                     pendingPostId?.let { id ->
@@ -60,19 +65,38 @@ class MainActivity : ComponentActivity() {
                         intent.removeExtra(PostDetailNavigation.EXTRA_POST_ID)
                     }
                 }
-                HomeRoute(
-                    model = model,
-                    onPost = { selectedPostId = it },
-                    detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail, currentUserId = accountId) }) },
-                    onReturnHome = ::closeDetail,
-                    onSignOut = {
-                        closeDetail()
-                        pendingPostId = null
-                        intent.removeExtra(PostDetailNavigation.EXTRA_POST_ID)
-                        accounts.signOut()
-                        accountId = null
-                    }
-                )
+
+                if (isCreatingPost) {
+                    PostFormScreen(
+                        uid = accountId,
+                        onLeave = { isCreatingPost = false },
+                        vm = postFormModel,
+                        onSubmitSuccess = {
+                            isCreatingPost = false
+                            model.refreshAfterPostCreated()
+                        }
+                    )
+                } else {
+                    HomeRoute(
+                        model = model,
+                        onPost = { selectedPostId = it },
+                        onCreatePost = { lost ->
+                            closeDetail()
+                            postFormModel.setInitialType(lost)
+                            isCreatingPost = true
+                        },
+                        detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail, currentUserId = accountId) }) },
+                        onReturnHome = ::closeDetail,
+                        onSignOut = {
+                            closeDetail()
+                            isCreatingPost = false
+                            pendingPostId = null
+                            intent.removeExtra(PostDetailNavigation.EXTRA_POST_ID)
+                            accounts.signOut()
+                            accountId = null
+                        }
+                    )
+                }
             } else {
                 AuthScreen(
                     accounts = accounts,

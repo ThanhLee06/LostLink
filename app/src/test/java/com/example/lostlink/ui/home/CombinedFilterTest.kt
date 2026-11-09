@@ -1,6 +1,7 @@
 package com.example.lostlink.ui.home
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.OffsetDateTime
@@ -143,4 +144,23 @@ class CombinedFilterTest {
         assertEquals(1, matchedArea.size)
     }
 
+    @Test
+    fun testPostResolvedStatusHandling() {
+        val openPost = HomePost("1", "Ví", "LOST", "CS1", now, status = "OPEN")
+        val resolvedPost = HomePost("2", "Chìa khóa", "FOUND", "CS1", now, status = "RESOLVED")
+        val closedPost = HomePost("3", "Thẻ", "LOST", "CS1", now, status = "CLOSED")
+        val completedPost = HomePost("4", "Balo", "LOST", "CS1", now, status = "COMPLETED")
+
+        assertTrue(openPost.isOpened)
+        assertFalse(openPost.isResolved)
+
+        assertTrue(resolvedPost.isResolved)
+        assertFalse(resolvedPost.isOpened)
+
+        assertTrue(closedPost.isResolved)
+        assertFalse(closedPost.isOpened)
+
+        assertTrue(completedPost.isResolved)
+        assertFalse(completedPost.isOpened)
+    }
 }

@@ -21,6 +21,10 @@ class PostFormViewModel : ViewModel() {
         }
     }
 
+    fun setInitialType(isLost: Boolean) {
+        _state.update { it.copy(type = if (isLost) PostType.LOST else PostType.FOUND) }
+    }
+
     fun onTypeChange(type: PostType) = _state.update { it.copy(type = type) }
 
     fun onTitleChange(v: String) = _state.update {

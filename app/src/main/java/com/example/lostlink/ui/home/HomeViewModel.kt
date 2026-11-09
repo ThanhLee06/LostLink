@@ -55,6 +55,10 @@ class HomeViewModel : ViewModel() {
         refreshIfPending()
     }
 
+    fun refreshAfterPostModified() {
+        refreshAfterPostCreated()
+    }
+
     private fun refreshIfPending() {
         if (refreshPending && !state.loading) {
             refreshPending = false
