@@ -7,6 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +24,7 @@ import com.example.lostlink.data.FirebaseAccountRepository
 import com.example.lostlink.ui.auth.AuthScreen
 import com.example.lostlink.ui.home.HomeRoute
 import com.example.lostlink.ui.home.HomeViewModel
+import com.example.lostlink.ui.home.HomeTheme
 import com.example.lostlink.ui.detail.PostDetailNavigation
 import com.example.lostlink.ui.detail.PostDetailRoute
 import com.example.lostlink.ui.detail.PostDetailViewModel
@@ -39,15 +44,20 @@ class MainActivity : ComponentActivity() {
         )
         val model = ViewModelProvider(this)[HomeViewModel::class.java]
         val detailModel = ViewModelProvider(this)[PostDetailViewModel::class.java]
-        val postFormModel = ViewModelProvider(this)[PostFormViewModel::class.java]
+        val postFormModel = ViewModelProvider(this, PostFormViewModel.factory(applicationContext))[PostFormViewModel::class.java]
         setContent {
             val accounts = remember { FirebaseAccountRepository() }
             val auth = remember { FirebaseAuth.getInstance() }
             fun activeAccount() = accounts.currentUserId.takeIf { accounts.isUserLoggedInAndVerified }
             var accountId by remember { mutableStateOf(activeAccount()) }
             DisposableEffect(auth) {
-                val accountListener = FirebaseAuth.AuthStateListener { accountId = activeAccount() }
-                val tokenListener = FirebaseAuth.IdTokenListener { accountId = activeAccount() }
+                fun updateAccount() {
+                    val next = activeAccount()
+                    postFormModel.bindUser(next)
+                    accountId = next
+                }
+                val accountListener = FirebaseAuth.AuthStateListener { updateAccount() }
+                val tokenListener = FirebaseAuth.IdTokenListener { updateAccount() }
                 auth.addAuthStateListener(accountListener)
                 auth.addIdTokenListener(tokenListener)
                 onDispose { auth.removeAuthStateListener(accountListener); auth.removeIdTokenListener(tokenListener) }
@@ -67,23 +77,29 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (isCreatingPost) {
-                    PostFormScreen(
-                        uid = accountId,
-                        onLeave = { isCreatingPost = false },
-                        vm = postFormModel,
-                        onSubmitSuccess = {
-                            isCreatingPost = false
-                            model.refreshAfterPostCreated()
-                        }
-                    )
+                    HomeTheme {
+                        PostFormScreen(
+                            uid = accountId,
+                            onLeave = { isCreatingPost = false },
+                            vm = postFormModel,
+                            modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
+                            onPostCreated = { postId ->
+                                isCreatingPost = false
+                                selectedPostId = postId
+                                model.refreshAfterPostCreated()
+                            }
+                        )
+                    }
                 } else {
                     HomeRoute(
                         model = model,
                         onPost = { selectedPostId = it },
                         onCreatePost = { lost ->
-                            closeDetail()
-                            postFormModel.setInitialType(lost)
-                            isCreatingPost = true
+                            accountId?.let { uid ->
+                                closeDetail()
+                                postFormModel.openForUser(uid, lost)
+                                isCreatingPost = true
+                            }
                         },
                         detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail, currentUserId = accountId) }) },
                         onReturnHome = ::closeDetail,
