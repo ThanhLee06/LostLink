@@ -176,8 +176,14 @@ fun ProfileScreen(
                         OptionSwitchRow(
                             icon = HomeIcon.EMAIL,
                             title = "Hiển thị email trường để liên hệ",
-                            subtitle = "Cho phép người khác xem email @ut.edu.vn trên bài đăng để dễ dàng liên hệ tìm đồ.",
-                            checked = state.profile.allowEmailContact,
+                            subtitle = when {
+                                state.isSavingEmailContact -> "Đang lưu cài đặt liên hệ…"
+                                state.emailContactLoaded -> "Cho phép người khác xem email @ut.edu.vn trên bài đăng để dễ dàng liên hệ tìm đồ."
+                                state.loading -> "Đang tải cài đặt liên hệ…"
+                                else -> "Chưa tải được cài đặt liên hệ. Vui lòng thử lại."
+                            },
+                            checked = state.emailContactLoaded && state.profile.allowEmailContact,
+                            enabled = state.emailContactLoaded && !state.loading && !state.isSavingEmailContact,
                             onCheckedChange = {
                                 viewModel.toggleAllowEmailContact { result ->
                                     result.onSuccess { enabled ->
@@ -453,12 +459,13 @@ private fun OptionSwitchRow(
     subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -478,7 +485,8 @@ private fun OptionSwitchRow(
         }
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
         )
     }
 }
