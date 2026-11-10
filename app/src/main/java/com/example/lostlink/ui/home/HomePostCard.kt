@@ -66,11 +66,33 @@ private fun PostText(post: HomePost, showBadge: Boolean) {
 @Composable
 internal fun TypeBadge(post: HomePost, modifier: Modifier = Modifier, detail: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    Surface(modifier = modifier, color = if (post.isLost) colors.primaryContainer else colors.secondaryContainer,
-        contentColor = if (post.isLost) colors.onPrimaryContainer else colors.onSecondaryContainer,
-        shape = RoundedCornerShape(6.dp)) {
-        Text(if (post.isLost) "Mất đồ" else "Nhặt được", Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            modifier = modifier,
+            color = if (post.isLost) colors.primaryContainer else colors.secondaryContainer,
+            contentColor = if (post.isLost) colors.onPrimaryContainer else colors.onSecondaryContainer,
+            shape = RoundedCornerShape(6.dp)
+        ) {
+            Text(
+                text = if (post.isLost) "Mất đồ" else "Nhặt được",
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+        if (post.isResolved) {
+            Surface(
+                modifier = Modifier.testTag("badge-resolved"),
+                color = colors.surfaceVariant,
+                contentColor = colors.onSurfaceVariant,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = if (post.status.equals("CLOSED", true)) "Đã đóng" else "Đã giải quyết",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
     }
 }
 
