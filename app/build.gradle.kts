@@ -50,7 +50,18 @@ android {
     }
 
     buildTypes {
+        val rawBackendUrl = localProperties.getProperty("BACKEND_BASE_URL")?.trim().orEmpty()
+        val debugBackendUrl = rawBackendUrl.ifEmpty { "http://10.0.2.2:8000" }
+        val releaseBackendUrl = localProperties.getProperty("BACKEND_BASE_URL_RELEASE")?.trim()
+            ?.takeIf { it.startsWith("https://") }
+            ?: rawBackendUrl.takeIf { it.startsWith("https://") }
+            ?: ""
+
+        debug {
+            buildConfigField("String", "BACKEND_BASE_URL", "\"$debugBackendUrl\"")
+        }
         release {
+            buildConfigField("String", "BACKEND_BASE_URL", "\"$releaseBackendUrl\"")
             optimization {
                 enable = false
             }
