@@ -23,15 +23,8 @@ Settings.model_config["env_file"] = None
 get_settings.cache_clear()
 
 from app.core.firebase import reset_firebase_for_tests  # noqa: E402
-try:
-    from app.routers.events import reset_wake_rate_limiter_for_tests  # noqa: E402
-except ImportError:
-    reset_wake_rate_limiter_for_tests = None  # type: ignore
-
-try:
-    from app.worker.runner import reset_worker_scheduler_for_tests  # noqa: E402
-except ImportError:
-    reset_worker_scheduler_for_tests = None  # type: ignore
+from app.routers.events import reset_wake_rate_limiter_for_tests  # noqa: E402
+from app.worker.runner import reset_worker_scheduler_for_tests  # noqa: E402
 
 
 def _now_utc() -> datetime:
@@ -525,17 +518,13 @@ def _clean_runtime_singletons() -> Iterator[None]:
     """Ensure cached settings, Firebase singleton, wake limiter, and scheduler state don't leak."""
     get_settings.cache_clear()
     reset_firebase_for_tests()
-    if reset_wake_rate_limiter_for_tests is not None:
-        reset_wake_rate_limiter_for_tests()
-    if reset_worker_scheduler_for_tests is not None:
-        reset_worker_scheduler_for_tests()
+    reset_wake_rate_limiter_for_tests()
+    reset_worker_scheduler_for_tests()
     yield
     get_settings.cache_clear()
     reset_firebase_for_tests()
-    if reset_wake_rate_limiter_for_tests is not None:
-        reset_wake_rate_limiter_for_tests()
-    if reset_worker_scheduler_for_tests is not None:
-        reset_worker_scheduler_for_tests()
+    reset_wake_rate_limiter_for_tests()
+    reset_worker_scheduler_for_tests()
 
 
 @pytest.fixture
