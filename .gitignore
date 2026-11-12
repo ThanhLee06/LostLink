@@ -32,3 +32,23 @@ render.experimental.xml
 
 # Android Profiling
 *.hprof
+
+# Local AI runtime output and encrypted credentials
+/.ai/.local/
+
+# Python / Backend virtual env, caches, and secrets
+backend/.venv/
+backend/.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node / Firebase Emulator / Rules tests
+node_modules/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+firestore-debug.*.log
+ui-debug.log
+ui-debug.*.log
+.firebase/
