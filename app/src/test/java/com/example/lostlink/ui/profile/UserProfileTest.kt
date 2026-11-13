@@ -6,6 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UserProfileTest {
+    @Test fun closedPostsStayInCompletedTabRatherThanOpen() {
+        val closed = HomePost("closed", "Ví", "LOST", "Thư viện", 1, status = "CLOSED")
+        val state = ProfileState(userPosts = listOf(closed), selectedTab = ProfilePostTab.COMPLETED)
+        assertEquals(0, state.openPostsCount)
+        assertEquals(1, state.completedPostsCount)
+        assertEquals(listOf(closed), state.filteredPosts)
+    }
+
 
     @Test
     fun extractMssv_returnsDigitsFromEmailPrefix() {

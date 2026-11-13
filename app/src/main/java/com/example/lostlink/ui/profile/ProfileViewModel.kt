@@ -3,6 +3,12 @@ package com.example.lostlink.ui.profile
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.content.Context
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.launch
+import com.example.lostlink.data.PostRepository
 import androidx.lifecycle.ViewModel
 import com.example.lostlink.data.FirebaseAccountRepository
 import com.example.lostlink.ui.home.HomePost
@@ -15,7 +21,8 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
 import java.util.Date
 
-class ProfileViewModel : ViewModel() {
+class ProfileViewModel(private val mutations: PostRepository? = null) : ViewModel() {
+    private var actionLoading = false
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val accounts = FirebaseAccountRepository()
@@ -31,6 +38,7 @@ class ProfileViewModel : ViewModel() {
         val next = accounts.currentUserId.takeIf { accounts.isUserLoggedInAndVerified }
         if (!closed) {
             identity = next
+            actionLoading = false
             session++
             profileRequest++
             state = ProfileState(loading = false)
@@ -149,37 +157,43 @@ class ProfileViewModel : ViewModel() {
     }
 
     fun markStatus(post: HomePost, newStatus: String, onDone: ((Result<Unit>) -> Unit)? = null) {
-        firestore.collection("posts").document(post.id)
-            .update(
-                mapOf(
-                    "status" to newStatus,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            )
-            .addOnSuccessListener {
-                state = state.copy(
-                    userPosts = state.userPosts.map {
-                        if (it.id == post.id) it.copy(status = newStatus) else it
-                    }
-                )
-                onDone?.invoke(Result.success(Unit))
-            }
-            .addOnFailureListener { error ->
-                onDone?.invoke(Result.failure(error))
-            }
+        mutate({ repo, uid -> repo.updatePostStatus(uid, post.id, newStatus) }, {
+            state = state.copy(userPosts = state.userPosts.map {
+                if (it.id == post.id) it.copy(status = newStatus) else it
+            })
+        }, onDone)
     }
 
     fun deletePost(postId: String, onDone: ((Result<Unit>) -> Unit)? = null) {
-        firestore.collection("posts").document(postId).delete()
-            .addOnSuccessListener {
-                state = state.copy(
-                    userPosts = state.userPosts.filterNot { it.id == postId }
-                )
-                onDone?.invoke(Result.success(Unit))
+        mutate({ repo, uid -> repo.deletePost(uid, postId) }, {
+            state = state.copy(userPosts = state.userPosts.filterNot { it.id == postId })
+        }, onDone)
+    }
+
+    private fun mutate(operation: suspend (PostRepository, String) -> Unit,
+        onSuccess: () -> Unit, onDone: ((Result<Unit>) -> Unit)?) {
+        val uid = identity ?: return
+        val repo = mutations ?: return
+        if (actionLoading || !accounts.isUserLoggedInAndVerified) return
+        val version = session
+        actionLoading = true
+        viewModelScope.launch {
+            val result = try { operation(repo, uid); Result.success(Unit) } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                Result.failure(error)
             }
-            .addOnFailureListener { error ->
-                onDone?.invoke(Result.failure(error))
-            }
+            if (!isCurrentSession(uid, version)) return@launch
+            actionLoading = false
+            if (result.isSuccess) onSuccess()
+            else state = state.copy(error = result.exceptionOrNull()?.localizedMessage ?: "Thao tác thất bại.")
+            onDone?.invoke(result)
+        }
+    }
+
+    companion object {
+        fun factory(context: Context) = viewModelFactory {
+            initializer { ProfileViewModel(PostRepository(context.applicationContext)) }
+        }
     }
 
     fun toggleNotifications() {

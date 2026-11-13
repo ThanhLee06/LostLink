@@ -64,12 +64,12 @@ data class ProfileState(
     val emailContactLoaded: Boolean = false,
     val isSavingEmailContact: Boolean = false,
 ) {
-    val openPostsCount get() = userPosts.count { !it.isResolved }
-    val completedPostsCount get() = userPosts.count { it.isResolved }
+    val openPostsCount get() = userPosts.count { !it.isCompleted }
+    val completedPostsCount get() = userPosts.count { it.isCompleted }
     val totalPostsCount get() = userPosts.size
 
     val filteredPosts: List<HomePost> get() = when (selectedTab) {
-        ProfilePostTab.OPEN -> userPosts.filter { !it.isResolved }
-        ProfilePostTab.COMPLETED -> userPosts.filter { it.isResolved }
+        ProfilePostTab.OPEN -> userPosts.filter { !it.isCompleted }
+        ProfilePostTab.COMPLETED -> userPosts.filter { it.isCompleted }
     }
 }

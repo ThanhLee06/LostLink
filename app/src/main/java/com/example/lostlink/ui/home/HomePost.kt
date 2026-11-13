@@ -42,10 +42,10 @@ data class HomePost(
     val isLost get() = type == "LOST"
     val typeLabel get() = if (isLost) "Mất" else "Tìm thấy"
     val isActive get() = status.equals("OPEN", true) || status.equals("ACTIVE", true)
-    val isResolved get() = status.equals("RESOLVED", true) || status.equals("CLOSED", true) || status.equals("COMPLETED", true) || status.equals("HOAN_TAT", true)
+    val isResolved get() = status.equals("RESOLVED", true)
     val isClosed get() = status.equals("CLOSED", true)
-    val isCompleted get() = isResolved
-    val isOpened get() = !isResolved
+    val isCompleted get() = isResolved || isClosed || status.equals("COMPLETED", true) || status.equals("HOAN_TAT", true)
+    val isOpened get() = !isCompleted
     val isHidden get() = moderationStatus.equals("HIDDEN", true)
     val isVisibleOnFeed get() = !isHidden && (isActive || isResolved)
 
