@@ -227,6 +227,7 @@ fun PostFormWhereWhen(
             }
         }
 
+        // Mô tả chi tiết vị trí
         OutlinedTextField(
             value = state.locationNote,
             onValueChange = onLocationNoteChange,
@@ -258,7 +259,7 @@ fun PostFormWhereWhen(
             thickness = 1.dp
         )
 
-        // THỜI GIAN
+        // THỜI GIAN 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

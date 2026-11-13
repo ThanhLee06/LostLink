@@ -28,6 +28,7 @@ class CloudinaryRepository(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(45, TimeUnit.SECONDS)
         .build(),
 ) {
 
@@ -69,7 +70,7 @@ class CloudinaryRepository(
 
         // 2. Validate File Size (Max 5 MB)
         val bytes = try {
-            contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+            contentResolver.openInputStream(imageUri)?.use { readImageUploadBytes(it) }
         } catch (e: Exception) {
             return@withContext Result.failure(
                 IllegalArgumentException("Unable to read selected image: ${e.localizedMessage}"),
@@ -109,27 +110,28 @@ class CloudinaryRepository(
 
         // 4. Execute Network Request & Handle Errors
         try {
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string().orEmpty()
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
 
-            if (!response.isSuccessful) {
-                val errorMessage = parseCloudinaryError(responseBody)
-                return@withContext Result.failure(
-                    IOException("Upload failed (${response.code}): $errorMessage"),
-                )
+                if (!response.isSuccessful) {
+                    val errorMessage = parseCloudinaryError(responseBody)
+                    return@withContext Result.failure(
+                        IOException("Upload failed (${response.code}): $errorMessage"),
+                    )
+                }
+
+                // 5. Parse secure_url from Cloudinary JSON response
+                val jsonResponse = JSONObject(responseBody)
+                val secureUrl = jsonResponse.optString("secure_url", "")
+
+                if (!secureUrl.startsWith("https://")) {
+                    return@withContext Result.failure(
+                        IllegalStateException("Cloudinary did not return a valid secure_url."),
+                    )
+                }
+
+                Result.success(secureUrl)
             }
-
-            // 5. Parse secure_url from Cloudinary JSON response
-            val jsonResponse = JSONObject(responseBody)
-            val secureUrl = jsonResponse.optString("secure_url", "")
-
-            if (secureUrl.isBlank()) {
-                return@withContext Result.failure(
-                    IllegalStateException("Cloudinary did not return a valid secure_url."),
-                )
-            }
-
-            Result.success(secureUrl)
         } catch (e: UnknownHostException) {
             Result.failure(IOException("No internet connection. Please check your network and try again."))
         } catch (e: SocketTimeoutException) {

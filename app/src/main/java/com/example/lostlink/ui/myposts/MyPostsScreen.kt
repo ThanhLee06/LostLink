@@ -93,7 +93,8 @@ fun MyPostsScreen(
     onCreatePostClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MyPostsViewModel = viewModel(),
-    onEditPostClick: ((HomePost) -> Unit)? = null
+    onEditPostClick: ((HomePost) -> Unit)? = null,
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -156,6 +157,7 @@ fun MyPostsScreen(
                 TextButton(
                     onClick = {
                         viewModel.markStatus(post, "CLOSED")
+                        onPostChanged?.invoke(post.id, "CLOSED")
                         postToClose = null
                     },
                     enabled = !state.actionLoading
@@ -225,6 +227,7 @@ fun MyPostsScreen(
                             post,
                             "RESOLVED"
                         )
+                        onPostChanged?.invoke(post.id, "RESOLVED")
                         postToResolve = null
                     },
                     enabled = !state.actionLoading
@@ -287,6 +290,7 @@ fun MyPostsScreen(
 
                         p?.let {
                             viewModel.deletePost(it.id)
+                            onPostChanged?.invoke(it.id, "DELETED")
                         }
                     }
                 ) {
@@ -502,6 +506,7 @@ fun MyPostsScreen(
 
                                             if (isResolved) {
                                                 viewModel.markStatus(post, "ACTIVE")
+                                                onPostChanged?.invoke(post.id, "ACTIVE")
                                             } else {
                                                 postToResolve = post
                                             }
@@ -525,7 +530,7 @@ fun MyPostsScreen(
 }
 
 @Composable
-private fun MyPostCard(
+internal fun MyPostCard(
     post: HomePost,
     onClick: () -> Unit,
     onEditClick: () -> Unit,

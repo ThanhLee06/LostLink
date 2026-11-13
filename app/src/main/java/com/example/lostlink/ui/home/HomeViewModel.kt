@@ -55,6 +55,22 @@ class HomeViewModel : ViewModel() {
         refreshIfPending()
     }
 
+    fun refreshAfterPostModified() {
+        refreshAfterPostCreated()
+    }
+
+    fun removePost(postId: String) {
+        state = state.copy(posts = state.posts.filterNot { it.id == postId })
+    }
+
+    fun updatePostStatus(postId: String, newStatus: String) {
+        state = state.copy(
+            posts = state.posts.map { post ->
+                if (post.id == postId) post.copy(status = newStatus) else post
+            }
+        )
+    }
+
     private fun refreshIfPending() {
         if (refreshPending && !state.loading) {
             refreshPending = false

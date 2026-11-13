@@ -21,6 +21,7 @@ fun isValidPostId(id: String): Boolean = id.isNotBlank() && id !in listOf(".", "
 class PostDetailViewModel(private val source: PostDetailSource = FirebasePostDetailSource()) : ViewModel() {
     var state by mutableStateOf(PostDetailState())
         private set
+    val currentUserId: String? get() = source.activeUserId ?: identity
     private var identity: String? = null
     private var session = 0L
     private var request = 0L

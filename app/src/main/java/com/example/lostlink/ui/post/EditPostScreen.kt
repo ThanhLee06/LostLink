@@ -1,7 +1,12 @@
 package com.example.lostlink.ui.post
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,11 +23,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Title
@@ -43,11 +54,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -60,10 +72,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.lostlink.data.CloudinaryRepository
 import com.example.lostlink.ui.home.HomePost
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -71,6 +87,17 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+// Kiểm tra tính hợp lệ dữ liệu chỉnh sửa
+// =========================================================================
+// PHẦN 1: HÀM KIỂM TRA HỢP LỆ (VALIDATE DỮ LIỆU)
+// =========================================================================
+
+/**
+ * Kiểm tra dữ liệu bắt buộc trước khi lưu cập nhật.
+ * - Tiêu đề không được để trống.
+ * - Danh mục không được để trống.
+ * Trả về thông báo lỗi nếu có, hoặc null nếu hợp lệ.
+ */
 fun validateEditPostData(title: String, categoryId: String): String? {
     if (title.trim().isEmpty()) {
         return "Tiêu đề món đồ không được để trống."
@@ -81,6 +108,16 @@ fun validateEditPostData(title: String, categoryId: String): String? {
     return null
 }
 
+// Cập nhật tài liệu bài viết trên Firestore
+// =========================================================================
+// PHẦN 2: HÀM CẬP NHẬT DỮ LIỆU VÀO FIRESTORE
+// =========================================================================
+
+/**
+ * Cập nhật tài liệu posts/{postId} trên Firebase Firestore.
+ * - Bổ sung trường `updatedAt` lưu thời gian chỉnh sửa mới nhất.
+ * - Đảm bảo chỉ chính tác giả bài viết mới có quyền cập nhật (theo Firestore Security Rules).
+ */
 suspend fun updatePostToFirestore(
     postId: String,
     title: String,
@@ -88,7 +125,8 @@ suspend fun updatePostToFirestore(
     categoryId: String,
     categoryName: String,
     location: String,
-    description: String
+    description: String,
+    imageUrl: String?
 ): Result<Unit> {
     return runCatching {
         val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
@@ -96,7 +134,6 @@ suspend fun updatePostToFirestore(
 
         val postRef = FirebaseFirestore.getInstance().collection("posts").document(postId)
 
-        // Dữ liệu cần cập nhật vào Firestore
         val updateMap = hashMapOf<String, Any?>(
             "title" to title.trim(),
             "type" to type,
@@ -104,14 +141,16 @@ suspend fun updatePostToFirestore(
             "category" to categoryName,
             "location" to location.trim(),
             "description" to description.trim(),
-            "updatedAt" to FieldValue.serverTimestamp() // Thời gian cập nhật
+            "imageUrl" to imageUrl,
+            "imageUrls" to (if (!imageUrl.isNullOrBlank()) listOf(imageUrl) else emptyList<String>()),
+            "updatedAt" to FieldValue.serverTimestamp()
         )
 
         postRef.update(updateMap).await()
     }
 }
 
-
+ //Điền sẵn toàn bộ dữ liệu hiện tại của bài viết 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditPostScreen(
@@ -123,15 +162,51 @@ fun EditPostScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 1. Điền sẵn dữ liệu cũ từ bài viết vào state
+    // Điền sẵn dữ liệu cũ từ bài viết
     var title by remember { mutableStateOf(post.title) }
-    var type by remember { mutableStateOf(post.type) } // "LOST" hoặc "FOUND"
+    var type by remember { mutableStateOf(post.type) } 
     var categoryId by remember { mutableStateOf(post.categoryId.ifBlank { "other" }) }
     var location by remember { mutableStateOf(post.location) }
     var description by remember { mutableStateOf(post.description) }
 
+    // Quản lý ảnh: ảnh hiện tại trên mạng hoặc ảnh mới chọn từ máy
+    val originalImageUrl: String? = remember { post.images.firstOrNull { it.isNotBlank() } }
+    var currentImageUrl by remember { mutableStateOf<String?>(originalImageUrl) }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isImageDeleted by remember { mutableStateOf(false) }
+
     var isSaving by remember { mutableStateOf(false) }
+    var savingStatus by remember { mutableStateOf("Đang lưu bài đăng...") }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
+
+    // Launcher chọn ảnh từ máy
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedImageUri = uri
+            isImageDeleted = false
+        }
+    }
+
+    val filePickerFallback = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedImageUri = uri
+            isImageDeleted = false
+        }
+    }
+
+    fun pickImage() {
+        try {
+            photoPickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        } catch (_: Exception) {
+            filePickerFallback.launch("image/*")
+        }
+    }
 
     val categories = remember {
         listOf(
@@ -203,7 +278,7 @@ fun EditPostScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Chọn Loại tin
+                        // Chọn Loại tin 
                         EditSectionHeader(icon = Icons.Outlined.Info, title = "Loại tin")
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -211,7 +286,6 @@ fun EditPostScreen(
                         ) {
                             val isLost = type == "LOST"
 
-                            // Nút Mất đồ
                             SelectableTypeButton(
                                 title = "Mất đồ",
                                 icon = Icons.Rounded.SearchOff,
@@ -220,7 +294,6 @@ fun EditPostScreen(
                                 modifier = Modifier.weight(1f)
                             )
 
-                            // Nút Nhặt được
                             SelectableTypeButton(
                                 title = "Nhặt được",
                                 icon = Icons.Rounded.Inventory2,
@@ -242,6 +315,10 @@ fun EditPostScreen(
                             onValueChange = { title = it },
                             placeholder = { Text("Ví dụ: Ví da màu nâu...") },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                capitalization = KeyboardCapitalization.Sentences
+                            ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -254,7 +331,7 @@ fun EditPostScreen(
                             Surface(
                                 onClick = { categoryMenuExpanded = true },
                                 shape = RoundedCornerShape(12.dp),
-                                border = androidx.compose.foundation.BorderStroke(
+                                border = BorderStroke(
                                     1.dp,
                                     MaterialTheme.colorScheme.outlineVariant
                                 ),
@@ -299,7 +376,7 @@ fun EditPostScreen(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Khu vực ,Địa điểm
+                        // Khu vực / Địa điểm
                         EditSectionHeader(icon = Icons.Outlined.Place, title = "Khu vực / Địa điểm")
                         OutlinedTextField(
                             value = location,
@@ -312,7 +389,97 @@ fun EditPostScreen(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Mục 5: Mô tả chi tiết
+                        // Hình ảnh món đồ (Bổ sung / Thay đổi ảnh)
+                        EditSectionHeader(icon = Icons.Outlined.Image, title = "Hình ảnh món đồ")
+                        val activeImageModel: Any? = when {
+                            selectedImageUri != null -> selectedImageUri
+                            !isImageDeleted && !currentImageUrl.isNullOrBlank() -> currentImageUrl
+                            else -> null
+                        }
+
+                        if (activeImageModel != null) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(activeImageModel)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = "Ảnh món đồ",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { pickImage() },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Đổi ảnh khác")
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            selectedImageUri = null
+                                            isImageDeleted = true
+                                        },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Gỡ ảnh")
+                                    }
+                                }
+                            }
+                        } else {
+                            Surface(
+                                onClick = { pickImage() },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.AddPhotoAlternate,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = "Thêm ảnh món đồ (JPG, PNG, WEBP)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        // Mô tả chi tiết
                         EditSectionHeader(icon = Icons.Outlined.Description, title = "Mô tả chi tiết")
                         OutlinedTextField(
                             value = description,
@@ -320,6 +487,10 @@ fun EditPostScreen(
                             placeholder = { Text("Thêm các đặc điểm nhận diện riêng của món đồ...") },
                             minLines = 4,
                             maxLines = 6,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                capitalization = KeyboardCapitalization.Sentences
+                            ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -327,7 +498,7 @@ fun EditPostScreen(
                 }
             }
 
-            //Nút Lưu thay đổi
+            // Nút Lưu thay đổi
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surface,
@@ -336,7 +507,6 @@ fun EditPostScreen(
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
                         onClick = {
-                            // 1. Kiểm tra hợp lệ dữ liệu
                             val errorMsg = validateEditPostData(title, categoryId)
                             if (errorMsg != null) {
                                 Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
@@ -345,6 +515,26 @@ fun EditPostScreen(
 
                             isSaving = true
                             coroutineScope.launch {
+                                var finalImageUrl: String? = when {
+                                    isImageDeleted -> null
+                                    selectedImageUri != null -> null // Cần tải lên Cloudinary
+                                    else -> currentImageUrl
+                                }
+
+                                // Nếu người dùng chọn ảnh mới -> tải lên Cloudinary
+                                if (selectedImageUri != null) {
+                                    savingStatus = "Đang tải ảnh lên..."
+                                    val uploadResult = CloudinaryRepository().uploadImage(context, selectedImageUri)
+                                    if (uploadResult.isFailure) {
+                                        isSaving = false
+                                        val err = uploadResult.exceptionOrNull()?.localizedMessage ?: "Tải ảnh thất bại."
+                                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                                        return@launch
+                                    }
+                                    finalImageUrl = uploadResult.getOrNull()
+                                }
+
+                                savingStatus = "Đang lưu bài đăng..."
                                 val result = updatePostToFirestore(
                                     postId = post.id,
                                     title = title,
@@ -352,7 +542,8 @@ fun EditPostScreen(
                                     categoryId = categoryId,
                                     categoryName = selectedCategoryLabel,
                                     location = location,
-                                    description = description
+                                    description = description,
+                                    imageUrl = finalImageUrl
                                 )
 
                                 isSaving = false
@@ -379,7 +570,7 @@ fun EditPostScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("Đang lưu bài đăng...")
+                            Text(savingStatus)
                         } else {
                             Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
@@ -396,8 +587,7 @@ fun EditPostScreen(
     }
 }
 
-
-
+//CÁC COMPONENT GIAO DIỆN NHỎ 
 @Composable
 private fun EditSectionHeader(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -434,7 +624,7 @@ private fun SelectableTypeButton(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
         ),
@@ -469,4 +659,3 @@ private fun SelectableTypeButton(
         }
     }
 }
-

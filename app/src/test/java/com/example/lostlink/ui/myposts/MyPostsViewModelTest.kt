@@ -2,15 +2,28 @@ package com.example.lostlink.ui.myposts
 
 import com.example.lostlink.data.MyPostsDataSource
 import com.example.lostlink.ui.home.HomePost
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MyPostsViewModelTest {
+
+    private val dispatcher = StandardTestDispatcher()
+    @Before fun prepareMain() = Dispatchers.setMain(dispatcher)
+    @After fun restoreMain() = Dispatchers.resetMain()
 
     private class FakeMyPostsDataSource(
         var postsToEmit: List<HomePost> = emptyList()
@@ -48,14 +61,13 @@ class MyPostsViewModelTest {
 
     @Test
     fun state_filtersOpenAndResolvedPostsCorrectly() {
-        val openPost1 = createSamplePost("1", "Ví mất", "OPEN")
-        val openPost2 = createSamplePost("2", "Thẻ SV", "OPEN")
-        val resolvedPost = createSamplePost("3", "Chìa khóa", "RESOLVED")
+        val openPost1 = createSamplePost("1", "Chìa khoá", "OPEN")
+        val openPost2 = createSamplePost("2", "Thẻ SV", "open")
+        val resolvedPost = createSamplePost("3", "Ví tiền", "RESOLVED")
         val closedPost = createSamplePost("4", "Điện thoại", "CLOSED")
 
         val state = MyPostsState(
-            posts = listOf(openPost1, openPost2, resolvedPost, closedPost),
-            selectedTab = MyPostsTab.OPEN
+            posts = listOf(openPost1, openPost2, resolvedPost, closedPost)
         )
 
         assertEquals(2, state.openPosts.size)
@@ -75,12 +87,13 @@ class MyPostsViewModelTest {
     }
 
     @Test
-    fun bindUser_loadsPostsSuccessfully() = runBlocking {
+    fun bindUser_loadsPostsSuccessfully() = runTest(dispatcher) {
         val p1 = createSamplePost("p1", "Balo", "OPEN")
         val fakeRepo = FakeMyPostsDataSource(listOf(p1))
         val vm = MyPostsViewModel(repositoryProvider = { fakeRepo })
 
         vm.bindUser("user123")
+        advanceUntilIdle()
 
         val currentState = vm.state.value
         assertFalse(currentState.loading)
@@ -98,25 +111,26 @@ class MyPostsViewModelTest {
     }
 
     @Test
-    fun markStatus_updatesPostStatusViaRepository() = runBlocking {
+    fun markStatus_updatesPostStatusViaRepository() = runTest(dispatcher) {
         val fakeRepo = FakeMyPostsDataSource()
         val vm = MyPostsViewModel(repositoryProvider = { fakeRepo })
         val post = createSamplePost("100", "Ví", "OPEN")
 
         vm.markStatus(post, "RESOLVED")
+        advanceUntilIdle()
 
         assertEquals("100", fakeRepo.lastUpdatedPostId)
         assertEquals("RESOLVED", fakeRepo.lastUpdatedStatus)
     }
 
     @Test
-    fun deletePost_callsRepositoryDelete() = runBlocking {
+    fun deletePost_callsRepositoryDelete() = runTest(dispatcher) {
         val fakeRepo = FakeMyPostsDataSource()
         val vm = MyPostsViewModel(repositoryProvider = { fakeRepo })
 
         vm.deletePost("200")
+        advanceUntilIdle()
 
         assertEquals("200", fakeRepo.lastDeletedPostId)
     }
 }
-

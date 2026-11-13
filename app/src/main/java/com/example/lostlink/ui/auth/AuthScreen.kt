@@ -303,11 +303,12 @@ fun AuthScreen(
                         contentAlignment = Alignment.CenterEnd,
                     ) {
                         Text(
-                            text = "Quên mật khẩu",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextDark,
+                            text = "Quên mật khẩu?",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = GreenAccent,
                             modifier = Modifier.clickable {
+                                errorMessage = null
                                 showForgotPasswordDialog = true
                             },
                         )
@@ -520,54 +521,127 @@ fun AuthScreen(
         var resetEmail by remember { mutableStateOf(email.text) }
         var resetLoading by remember { mutableStateOf(value = false) }
         var resetError by remember { mutableStateOf<String?>(null) }
+        var resetSuccess by remember { mutableStateOf<String?>(null) }
+
+        fun doSendResetEmail() {
+            val cleanEmail = resetEmail.trim()
+            if (!FirebaseAccountRepository.isAllowedEmail(cleanEmail)) {
+                resetError = "Vui lòng nhập đúng địa chỉ email sinh viên UTH (@ut.edu.vn)."
+                return
+            }
+            resetLoading = true
+            resetError = null
+            accounts.sendPasswordReset(cleanEmail) { result ->
+                resetLoading = false
+                result.onSuccess {
+                    resetSuccess = "Đã gửi yêu cầu tới $cleanEmail!\n\nNếu email này đã đăng ký tài khoản, bạn sẽ nhận được thư trong vài phút.\n\n⚠️ Hãy kiểm tra thư mục Spam / Thư rác / Tất cả thư trong Gmail."
+                    Toast.makeText(context, "Đã gửi email đặt lại mật khẩu! Kiểm tra Gmail của bạn.", Toast.LENGTH_SHORT).show()
+                }.onFailure { err ->
+                    resetError = err.localizedMessage ?: "Gửi email thất bại. Vui lòng kiểm tra lại địa chỉ email."
+                }
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { if (!resetLoading) showForgotPasswordDialog = false },
-            title = { Text("Quên mật khẩu", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            title = { Text("Quên mật khẩu?", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextDark) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Nhập email @ut.edu.vn của bạn để nhận liên kết đặt lại mật khẩu.", fontSize = 13.sp, color = TextMuted)
+                    Text(
+                        "Nhập email trường (@ut.edu.vn) của bạn để nhận liên kết đặt lại mật khẩu.",
+                        fontSize = 13.sp,
+                        color = TextMuted
+                    )
                     OutlinedTextField(
                         value = resetEmail,
-                        onValueChange = { resetEmail = it; resetError = null },
-                        label = { Text("Email sinh viên") },
+                        onValueChange = {
+                            resetEmail = it
+                            resetError = null
+                            resetSuccess = null
+                        },
+                        label = { Text("Email sinh viên (@ut.edu.vn)") },
+                        placeholder = { Text("ví dụ: 2151050001@ut.edu.vn") },
                         singleLine = true,
-                        enabled = !resetLoading,
+                        enabled = !resetLoading && resetSuccess == null,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     resetError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
+                    resetSuccess?.let { successMsg ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                color = Color(0xFFE6F4EA),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = successMsg,
+                                    color = Color(0xFF137333),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = { doSendResetEmail() },
+                                    enabled = !resetLoading
+                                ) {
+                                    Text(
+                                        if (resetLoading) "Đang gửi lại..." else "🔄 Gửi lại email",
+                                        fontSize = 12.sp,
+                                        color = TextDark,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { openGmailApp(context) }
+                                ) {
+                                    Text("Mở Gmail ✉️", fontSize = 12.sp, color = GreenAccent, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = !resetLoading && resetEmail.isNotBlank(),
-                    onClick = {
-                        resetLoading = true
-                        resetError = null
-                        accounts.sendPasswordReset(resetEmail) { result ->
-                            resetLoading = false
-                            result.onSuccess {
-                                showForgotPasswordDialog = false
-                                Toast.makeText(context, "Đã gửi email đặt lại mật khẩu! Kiểm tra hộp thư của bạn.", Toast.LENGTH_LONG).show()
-                            }.onFailure { err ->
-                                resetError = err.localizedMessage ?: "Gửi email thất bại. Vui lòng kiểm tra lại địa chỉ email."
-                            }
+                if (resetSuccess == null) {
+                    Button(
+                        enabled = !resetLoading && resetEmail.isNotBlank(),
+                        onClick = { doSendResetEmail() },
+                        colors = ButtonDefaults.buttonColors(containerColor = GreenAccent)
+                    ) {
+                        if (resetLoading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Đang gửi...", fontSize = 13.sp)
+                        } else {
+                            Text("Gửi liên kết", fontSize = 13.sp, color = Color.White)
                         }
-                    },
-                ) {
-                    Text(if (resetLoading) "Đang gửi..." else "Gửi liên kết", color = GreenAccent)
+                    }
+                } else {
+                    Button(
+                        onClick = { showForgotPasswordDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = GreenAccent)
+                    ) {
+                        Text("Hoàn tất", fontSize = 13.sp, color = Color.White)
+                    }
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showForgotPasswordDialog = false },
-                    enabled = !resetLoading,
-                ) {
-                    Text("Hủy", color = TextMuted)
+                if (resetSuccess == null) {
+                    TextButton(
+                        onClick = { showForgotPasswordDialog = false },
+                        enabled = !resetLoading
+                    ) {
+                        Text("Hủy", color = TextMuted)
+                    }
                 }
-            },
+            }
         )
     }
 }

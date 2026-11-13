@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.PostAdd
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
@@ -45,8 +46,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
@@ -54,18 +58,24 @@ fun PostFormScreen(
     uid: String?,
     onLeave: () -> Unit,
     modifier: Modifier = Modifier,
-    vm: PostFormViewModel = viewModel(),
-    onSubmitSuccess: ((PostFormState) -> Unit)? = null,
-    onPostCreated: ((String) -> Unit)? = null
+    vm: PostFormViewModel = viewModel(factory = PostFormViewModel.factory(LocalContext.current)),
+    onPostCreated: (String) -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
-    val context = LocalContext.current
     var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uid) { vm.bindUser(uid) }
+    LaunchedEffect(uid, state.createdPostId) {
+        val id = state.createdPostId
+        if (uid != null && id != null && vm.consumeCreatedPost(id)) onPostCreated(id)
+    }
 
-    val handleBack = {
-        if (state.hasUnsavedChanges) {
+    val handleBack: () -> Unit = {
+        if (state.isSubmitting) {
+            Unit
+        } else if (state.awaitingConfirmation) {
+            onLeave() // Keep the same draft/ID until its outcome is confirmed.
+        } else if (state.hasUnsavedChanges) {
             showDiscardDialog = true
         } else {
             onLeave()
@@ -73,6 +83,26 @@ fun PostFormScreen(
     }
 
     BackHandler(enabled = true) { handleBack() }
+
+    if (state.isSubmitting) {
+        Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+            Surface(shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    CircularProgressIndicator(Modifier.testTag("post-submit-progress"))
+                    Text(state.submitProgress ?: "Đang đăng tin…")
+                }
+            }
+        }
+    } else if (state.awaitingConfirmation) {
+        AlertDialog(
+            onDismissRequest = onLeave,
+            title = { Text("Kiểm tra kết quả đăng tin") },
+            text = { Text(state.submitError.orEmpty()) },
+            confirmButton = { TextButton(onClick = vm::submitPost, modifier = Modifier.testTag("retry-post")) { Text("Thử lại") } },
+            dismissButton = { TextButton(onClick = onLeave) { Text("Về trang chủ") } },
+        )
+    }
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -195,90 +225,40 @@ fun PostFormScreen(
                 shadowElevation = 8.dp,
                 tonalElevation = 2.dp
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    if (state.submitError != null) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Warning,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = state.submitError.orEmpty(),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
+                Column {
+                    state.submitError?.let { message ->
+                        Text(message, color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("post-submit-error"))
                     }
-
                     ElevatedButton(
-                        onClick = {
-                            vm.submitPost(context) { createdId ->
-                                onPostCreated?.invoke(createdId)
-                                onSubmitSuccess?.invoke(state)
-                            }
-                        },
-                        enabled = !state.isSubmitting,
+                        onClick = vm::submitPost,
+                        enabled = !state.isSubmitting && state.createdPostId == null,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .testTag("submit-post")
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                             .height(52.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.elevatedButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         elevation = ButtonDefaults.elevatedButtonElevation(
                             defaultElevation = 4.dp,
                             pressedElevation = 8.dp
                         )
                     ) {
-                        if (state.isSubmitting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = state.submitProgress ?: "Đang đăng tin...",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else {
-                            Text(
-                                text = if (state.submitError != null) "Thử lại" else "Đăng tin",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Icon(
-                                Icons.Rounded.PostAdd,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Text(
+                            if (state.submitError != null) "Thử lại" else "Đăng tin",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }

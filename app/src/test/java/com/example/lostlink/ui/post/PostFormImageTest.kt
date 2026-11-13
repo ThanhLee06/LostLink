@@ -31,7 +31,7 @@ class PostFormImageTest {
 
     @Test
     fun viewModel_initialImageStateIsNull() {
-        val vm = PostFormViewModel()
+        val vm = PostFormViewModel(FakePostCreationDataSource())
         assertNull("imageUri ban đầu phải là null", vm.state.value.imageUri)
         assertNull("errors.image ban đầu phải là null", vm.state.value.errors.image)
         assertFalse("Ban đầu chưa có thay đổi", vm.state.value.hasUnsavedChanges)
@@ -40,7 +40,7 @@ class PostFormImageTest {
     @Test
     fun viewModel_cancelPicker_preservesState() {
         // Kiểm tra yêu cầu: Nếu hủy bỏ bộ ảnh đã chọn, hãy quay lại biểu mẫu và giữ dữ liệu nhập vào
-        val vm = PostFormViewModel()
+        val vm = PostFormViewModel(FakePostCreationDataSource())
         vm.onTitleChange("Chìa khóa xe máy")
         vm.onDescriptionChange("Chìa khóa có móc treo hình con gấu")
 
@@ -55,7 +55,7 @@ class PostFormImageTest {
     @Test
     fun viewModel_onImageError_setsErrorMessage() {
         // Kiểm tra yêu cầu: Nếu hình ảnh không thể đọc hoặc quá lớn, xác định và hiển thị lỗi
-        val vm = PostFormViewModel()
+        val vm = PostFormViewModel(FakePostCreationDataSource())
         val errorMsg = "Ảnh quá lớn (6.2 MB). Vui lòng chọn ảnh dưới 5 MB."
 
         vm.onImageError(errorMsg)
@@ -68,7 +68,7 @@ class PostFormImageTest {
 
     @Test
     fun viewModel_removeImage_clearsImageAndErrors() {
-        val vm = PostFormViewModel()
+        val vm = PostFormViewModel(FakePostCreationDataSource())
         vm.onImageError("Lỗi ảnh cũ")
         vm.onRemoveImage()
 

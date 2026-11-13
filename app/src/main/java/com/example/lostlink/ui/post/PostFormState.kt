@@ -1,6 +1,7 @@
 package com.example.lostlink.ui.post
 
 import android.net.Uri
+import java.util.UUID
 
 enum class PostType(val code: String, val label: String) {
     LOST("lost", "Mất đồ"),
@@ -54,13 +55,12 @@ data class PostFormState(
     val timeNote: String = "",
 
     val errors: FormErrors = FormErrors(),
-
-    // Quản lý đăng bài & mã bài ổn định
-    val clientPostId: String = java.util.UUID.randomUUID().toString(),
-    val uploadedImageUrl: String? = null,
+    val clientPostId: String = UUID.randomUUID().toString(),
     val isSubmitting: Boolean = false,
     val submitProgress: String? = null,
-    val submitError: String? = null
+    val submitError: String? = null,
+    val awaitingConfirmation: Boolean = false,
+    val createdPostId: String? = null,
 ) {
     val hasUnsavedChanges: Boolean
         get() = title.isNotBlank() || categoryId != null || description.isNotBlank()
@@ -83,7 +83,7 @@ object PostFormValidator {
                 title.length > TITLE_MAX -> "Tên đồ tối đa $TITLE_MAX ký tự"
                 else -> null
             },
-            category = if (s.categoryId == null) "Chọn danh mục cho món đồ" else null,
+            category = if (PostCategories.find(s.categoryId) == null) "Chọn danh mục cho món đồ" else null,
             description = when {
                 desc.length > DESCRIPTION_MAX -> "Mô tả tối đa $DESCRIPTION_MAX ký tự"
                 else -> null
@@ -95,8 +95,8 @@ object PostFormValidator {
     }
 
     private fun validateArea(s: PostFormState): String? = when (s.areaChoice) {
-        AreaChoice.KNOWN -> null 
-        AreaChoice.OTHER -> if (s.areaOtherText.isBlank()) "Nhập tên khu vực hoặc chọn Không rõ" else null
+        AreaChoice.KNOWN -> if (PostAreas.find(s.areaId) == null) "Chọn khu vực, hoặc chọn Không rõ" else null
+        AreaChoice.OTHER -> if (s.areaOtherText.isBlank()) "Nhập tên khu vực" else null
         AreaChoice.UNKNOWN -> null
     }
 
