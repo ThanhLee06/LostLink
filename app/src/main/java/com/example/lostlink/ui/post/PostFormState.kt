@@ -12,15 +12,33 @@ data class Category(val id: String, val label: String)
 
 object PostCategories {
     val all = listOf(
-        Category("wallet", "Ví"),
-        Category("bag", "Túi, balo"),
+        Category("wallet", "Ví tiền"),
+        Category("student_card", "Thẻ sinh viên"),
+        Category("electronics", "Điện thoại/Laptop"),
         Category("keys", "Chìa khóa"),
-        Category("phone", "Điện thoại"),
-        Category("documents", "Giấy tờ, thẻ"),
-        Category("other", "Khác")
+        Category("bag", "Balo/Túi xách"),
+        Category("documents", "Giấy tờ"),
+        Category("other", "Đồ dùng khác"),
+    )
+
+    /**
+     * Approved legacy read aliases (e.g. old phone/laptop docs -> electronics).
+     * Never map "documents" to "student_card".
+     */
+    val legacyAliases = mapOf(
+        "phone" to "electronics",
+        "laptop" to "electronics",
     )
 
     fun find(id: String?) = all.firstOrNull { it.id == id }
+
+    fun normalizeId(id: String?): String? {
+        val cleaned = id?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        find(cleaned)?.let { return it.id }
+        return legacyAliases[cleaned]
+    }
+
+    fun findByIdOrAlias(id: String?) = find(normalizeId(id))
 }
 
 data class FormErrors(
@@ -85,6 +103,7 @@ object PostFormValidator {
             },
             category = if (PostCategories.find(s.categoryId) == null) "Chọn danh mục cho món đồ" else null,
             description = when {
+                desc.length < DESCRIPTION_MIN -> "Mô tả cần ít nhất $DESCRIPTION_MIN ký tự"
                 desc.length > DESCRIPTION_MAX -> "Mô tả tối đa $DESCRIPTION_MAX ký tự"
                 else -> null
             },

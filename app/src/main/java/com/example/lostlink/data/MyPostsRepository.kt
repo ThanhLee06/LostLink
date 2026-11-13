@@ -1,15 +1,13 @@
 package com.example.lostlink.data
 
+import android.content.Context
+import com.google.firebase.auth.FirebaseAuth
 import com.example.lostlink.ui.home.HomePost
-import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 interface MyPostsDataSource {
     fun observeMyPosts(authorId: String): Flow<List<HomePost>>
@@ -18,8 +16,14 @@ interface MyPostsDataSource {
 }
 
 class MyPostsRepository(
+    context: Context,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) : MyPostsDataSource {
+    private val mutations = PostRepository(context.applicationContext)
+    private fun currentUid() = requireNotNull(FirebaseAuth.getInstance().currentUser?.uid) {
+        "Bạn chưa đăng nhập."
+    }
+
 
     override fun observeMyPosts(authorId: String): Flow<List<HomePost>> = callbackFlow {
         if (authorId.isBlank()) {
@@ -51,23 +55,12 @@ class MyPostsRepository(
     }
 
     override suspend fun updatePostStatus(postId: String, newStatus: String): Result<Unit> = runCatching {
-        firestore.collection("posts").document(postId)
-            .update("status", newStatus)
-            .awaitTask()
+        mutations.updatePostStatus(currentUid(), postId, newStatus)
         Unit
     }
 
     override suspend fun deletePost(postId: String): Result<Unit> = runCatching {
-        firestore.collection("posts").document(postId)
-            .delete()
-            .awaitTask()
+        mutations.deletePost(currentUid(), postId)
         Unit
     }
 }
-
-private suspend fun <T> Task<T>.awaitTask(): T = suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { result -> cont.resume(result) }
-    addOnFailureListener { error -> cont.resumeWithException(error) }
-    addOnCanceledListener { cont.cancel() }
-}
-

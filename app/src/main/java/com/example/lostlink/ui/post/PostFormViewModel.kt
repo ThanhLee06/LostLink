@@ -1,6 +1,7 @@
 package com.example.lostlink.ui.post
 
 import android.net.Uri
+import com.example.lostlink.data.UploadedMedia
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +26,7 @@ class PostFormViewModel(private val repository: PostCreationDataSource) : ViewMo
     private var ownerUid: String? = null
     private var session = 0L
     private var submission: Job? = null
-    private var uploadedImageUrl: String? = null
+    private var uploadedImageUrl: UploadedMedia? = null
 
     fun bindUser(uid: String?) {
         if (uid != ownerUid) {
@@ -185,7 +186,7 @@ class PostFormViewModel(private val repository: PostCreationDataSource) : ViewMo
                 if (!isCurrent()) return@launch
                 if (snapshot.imageUri != null && uploadedImageUrl == null) {
                     _state.update { it.copy(submitProgress = "Đang tải ảnh lên…") }
-                    val url = repository.uploadImage(uid, snapshot.imageUri)
+                    val url = repository.uploadImage(uid, snapshot.clientPostId, snapshot.imageUri)
                     if (!isCurrent()) return@launch
                     uploadedImageUrl = url
                 }
