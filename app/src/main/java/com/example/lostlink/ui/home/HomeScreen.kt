@@ -301,7 +301,7 @@ fun HomeScreen(
                         )
                     }
                 }
-                if (!state.loading && state.error == null && state.posts.isEmpty()) {
+                if (!state.loading && state.error == null && state.posts.isEmpty() && !state.hasMore) {
                     item(key = "empty") {
                         FeedNotice(
                             title = "Chưa có tin",

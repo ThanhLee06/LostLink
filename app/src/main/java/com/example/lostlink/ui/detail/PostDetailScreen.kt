@@ -31,8 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.lostlink.ui.home.*
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.lostlink.data.PostRepository
+import com.example.lostlink.data.FirebaseAccountRepository
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,7 +59,7 @@ fun PostDetailScreen(
             }
             Text("Chi tiết tin", style = MaterialTheme.typography.titleMedium, color = colors.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f).semantics { heading() })
-            if (isOwner && onEditPost != null) {
+            if (isOwner && onEditPost != null && state.detail?.post?.isHidden != true) {
                 TextButton(onClick = { state.detail?.post?.let { onEditPost(it) } }) {
                     Text("Chỉnh sửa", color = colors.primary, fontWeight = FontWeight.Bold)
                 }
@@ -110,6 +111,11 @@ private fun DetailContent(
                 }
             }
             item(key = "facts") { DetailFacts(detail) }
+            if (isAuthor && post.isHidden) item(key = "moderation") {
+                DetailSection("Tin đang bị ẩn") {
+                    Text(detail.moderationReason ?: "Người quản trị đã ẩn bài đăng này.")
+                }
+            }
             item(key = "description") {
                 DetailSection("Mô tả") {
                     Text(post.description.ifBlank { "Người đăng chưa thêm mô tả." },
@@ -248,6 +254,29 @@ private fun DetailSummary(
     onRetry: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val repository = remember(context) { PostRepository(context.applicationContext) }
+    val accounts = remember { FirebaseAccountRepository() }
+    var mutating by remember(post.id) { mutableStateOf(false) }
+    fun mutate(action: String) {
+        val uid = accounts.currentUserId ?: return
+        if (mutating || uid != post.authorId || !accounts.isUserLoggedInAndVerified) return
+        mutating = true
+        scope.launch {
+            try {
+                if (action == "DELETED") repository.deletePost(uid, post.id)
+                else repository.updatePostStatus(uid, post.id, action)
+                if (accounts.currentUserId != uid || !accounts.isUserLoggedInAndVerified) return@launch
+                onPostChanged?.invoke(post.id, action)
+                if (action == "DELETED") onBack() else onRetry()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                if (accounts.currentUserId == uid) Toast.makeText(context,
+                    error.localizedMessage ?: "Thao tác thất bại.", Toast.LENGTH_LONG).show()
+            } finally { mutating = false }
+        }
+    }
     var showResolveDialog by remember { mutableStateOf(false) }
     var showCloseDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -273,12 +302,7 @@ private fun DetailSummary(
                 TextButton(
                     onClick = {
                         showResolveDialog = false
-                        FirebaseFirestore.getInstance().collection("posts").document(post.id)
-                            .update("status", "RESOLVED", "updatedAt", FieldValue.serverTimestamp())
-                            .addOnSuccessListener {
-                                onPostChanged?.invoke(post.id, "RESOLVED")
-                                onRetry()
-                            }
+                        mutate("RESOLVED")
                     }
                 ) {
                     Text("Xác nhận", color = Color(0xFF137333), fontWeight = FontWeight.Bold)
@@ -307,12 +331,7 @@ private fun DetailSummary(
                 TextButton(
                     onClick = {
                         showCloseDialog = false
-                        FirebaseFirestore.getInstance().collection("posts").document(post.id)
-                            .update("status", "CLOSED", "updatedAt", FieldValue.serverTimestamp())
-                            .addOnSuccessListener {
-                                onPostChanged?.invoke(post.id, "CLOSED")
-                                onRetry()
-                            }
+                        mutate("CLOSED")
                     }
                 ) {
                     Text("Tạm đóng", fontWeight = FontWeight.Bold)
@@ -333,11 +352,7 @@ private fun DetailSummary(
                 TextButton(
                     onClick = {
                         showDeleteDialog = false
-                        FirebaseFirestore.getInstance().collection("posts").document(post.id).delete()
-                            .addOnSuccessListener {
-                                onPostChanged?.invoke(post.id, "DELETED")
-                                onBack()
-                            }
+                        mutate("DELETED")
                     }
                 ) {
                     Text("Xóa bài", color = colors.error, fontWeight = FontWeight.Bold)
@@ -374,6 +389,7 @@ private fun DetailSummary(
                 if (!isResolvedOrClosed) {
                     Button(
                         onClick = { showResolveDialog = true },
+                        enabled = !mutating && !post.isHidden,
                         shape = HomeTokens.ImageShape,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF137333)),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
@@ -385,13 +401,9 @@ private fun DetailSummary(
                 } else {
                     OutlinedButton(
                         onClick = {
-                            FirebaseFirestore.getInstance().collection("posts").document(post.id)
-                                .update("status", "ACTIVE", "updatedAt", FieldValue.serverTimestamp())
-                                .addOnSuccessListener {
-                                    onPostChanged?.invoke(post.id, "ACTIVE")
-                                    onRetry()
-                                }
+                            mutate("OPEN")
                         },
+                        enabled = !mutating && !post.isHidden,
                         shape = HomeTokens.ImageShape,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
                     ) {
@@ -400,7 +412,7 @@ private fun DetailSummary(
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (onEditPost != null) {
+                    if (onEditPost != null && !post.isHidden) {
                         OutlinedButton(
                             onClick = { onEditPost(post) },
                             shape = HomeTokens.ImageShape,
@@ -415,6 +427,7 @@ private fun DetailSummary(
                     if (!isResolvedOrClosed) {
                         OutlinedButton(
                             onClick = { showCloseDialog = true },
+                        enabled = !mutating && !post.isHidden,
                             shape = HomeTokens.ImageShape,
                             modifier = Modifier.weight(1f).heightIn(min = 44.dp)
                         ) {
@@ -427,6 +440,7 @@ private fun DetailSummary(
 
                 TextButton(
                     onClick = { showDeleteDialog = true },
+                        enabled = !mutating,
                     colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
                     modifier = Modifier.fillMaxWidth()
                 ) {
