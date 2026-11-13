@@ -82,6 +82,7 @@ import com.example.lostlink.ui.home.HomeIcon
 import com.example.lostlink.ui.home.HomePost
 import com.example.lostlink.ui.home.LineIcon
 import com.example.lostlink.ui.home.postedTime
+import androidx.compose.material.icons.rounded.CheckCircle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +98,9 @@ fun MyPostsScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var postToDelete by remember { mutableStateOf<HomePost?>(null) }
+    var postToResolve by remember {
+        mutableStateOf<HomePost?>(null)
+    }
 
     LaunchedEffect(currentUserId) {
         viewModel.bindUser(currentUserId)
@@ -109,11 +113,85 @@ fun MyPostsScreen(
         }
     }
 
+
     BackHandler(onBack = onBack)
+
+    if (postToResolve != null) {
+        val post = postToResolve!!
+
+        val actionName = if (post.isLost) {
+            "Đã tìm thấy đồ"
+        } else {
+            "Đã trao trả cho người mất"
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                postToResolve = null
+            },
+
+            icon = {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF137333),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+
+            title = {
+                Text(
+                    "Xác nhận hoàn thành",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+
+            text = {
+                Text(
+                    "Bạn có chắc chắn muốn xác nhận " +
+                            "\"$actionName\" cho bài đăng " +
+                            "\"${post.title}\" không?\n\n" +
+                            "Bài đăng sẽ được chuyển sang mục Đã giải quyết."
+                )
+            },
+
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.markStatus(
+                            post,
+                            "RESOLVED"
+                        )
+                        postToResolve = null
+                    },
+                    enabled = !state.actionLoading
+                ) {
+                    Text(
+                        "Xác nhận",
+                        color = Color(0xFF137333),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        postToResolve = null
+                    }
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
 
     if (postToDelete != null) {
         AlertDialog(
-            onDismissRequest = { postToDelete = null },
+            onDismissRequest = {
+                postToDelete = null
+            },
+
             icon = {
                 Icon(
                     Icons.Rounded.Warning,
@@ -122,28 +200,53 @@ fun MyPostsScreen(
                     modifier = Modifier.size(32.dp)
                 )
             },
+
             title = {
-                Text("Xoá bài đăng này?", fontWeight = FontWeight.Bold)
+                Text(
+                    "Xoá bài đăng này?",
+                    fontWeight = FontWeight.Bold
+                )
             },
+
             text = {
-                Text("Bài đăng \"${postToDelete?.title}\" sẽ bị xoá vĩnh viễn khỏi LostLink và không thể hoàn tác.")
+                Text(
+                    "Bài đăng \"${postToDelete?.title}\" " +
+                            "sẽ bị xoá vĩnh viễn khỏi LostLink " +
+                            "và không thể hoàn tác."
+                )
             },
+
             confirmButton = {
-                TextButton(onClick = {
-                    val p = postToDelete
-                    postToDelete = null
-                    p?.let { viewModel.deletePost(it.id) }
-                }) {
-                    Text("Xoá bài", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = {
+                        val p = postToDelete
+                        postToDelete = null
+
+                        p?.let {
+                            viewModel.deletePost(it.id)
+                        }
+                    }
+                ) {
+                    Text(
+                        "Xoá bài",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
+
             dismissButton = {
-                TextButton(onClick = { postToDelete = null }) {
+                TextButton(
+                    onClick = {
+                        postToDelete = null
+                    }
+                ) {
                     Text("Hủy")
                 }
             }
         )
     }
+
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -327,12 +430,21 @@ fun MyPostsScreen(
                                     post = post,
                                     onClick = { onPostClick(post.id) },
                                     onEditClick = { onEditPostClick?.invoke(post) },
+
                                     onToggleStatus = {
-                                        val newStatus = if (post.status.equals("RESOLVED", ignoreCase = true) ||
-                                            post.status.equals("CLOSED", ignoreCase = true)
-                                        ) "OPEN" else "RESOLVED"
-                                        viewModel.markStatus(post, newStatus)
+                                        if (!state.actionLoading) {
+                                            val isResolved =
+                                                post.status.equals("RESOLVED", ignoreCase = true) ||
+                                                        post.status.equals("CLOSED", ignoreCase = true)
+
+                                            if (isResolved) {
+                                                viewModel.markStatus(post, "OPEN")
+                                            } else {
+                                                postToResolve = post
+                                            }
+                                        }
                                     },
+
                                     onDeleteClick = { postToDelete = post }
                                 )
                             }
@@ -538,12 +650,22 @@ private fun MyPostCard(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(6.dp))
+
                     Text(
-                        text = if (isResolved) "Mở lại tin tìm đồ" else "Đánh dấu đã giải quyết",
+                        text = when {
+                            isResolved -> "Mở lại bài đăng"
+                            post.isLost -> "Đã tìm thấy đồ"
+                            else -> "Đã trao trả cho người mất"
+                        },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (isResolved) MaterialTheme.colorScheme.primary else Color(0xFF137333)
+                        color = if (isResolved) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color(0xFF137333)
+                        }
                     )
+
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
