@@ -97,8 +97,13 @@ fun MyPostsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    var postToDelete by remember { mutableStateOf<HomePost?>(null) }
+    var postToDelete by remember {
+        mutableStateOf<HomePost?>(null)
+    }
     var postToResolve by remember {
+        mutableStateOf<HomePost?>(null)
+    }
+    var postToClose by remember {
         mutableStateOf<HomePost?>(null)
     }
 
@@ -115,6 +120,64 @@ fun MyPostsScreen(
 
 
     BackHandler(onBack = onBack)
+
+
+    if (postToClose != null) {
+        val post = postToClose!!
+
+        AlertDialog(
+            onDismissRequest = {
+                postToClose = null
+            },
+            icon = {
+                Icon(
+                    Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    "Tạm đóng tin?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Bạn có chắc chắn muốn tạm đóng bài đăng " +
+                            "\"${post.title}\" không?\n\n" +
+                            "Bài đăng sẽ ẩn khỏi Trang chủ nhưng " +
+                            "vẫn còn trong Tin của tôi. " +
+                            "Bạn có thể mở lại bất cứ lúc nào."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.markStatus(post, "CLOSED")
+                        postToClose = null
+                    },
+                    enabled = !state.actionLoading
+                ) {
+                    Text(
+                        "Tạm đóng tin",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        postToClose = null
+                    }
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
 
     if (postToResolve != null) {
         val post = postToResolve!!
@@ -438,14 +501,19 @@ fun MyPostsScreen(
                                                         post.status.equals("CLOSED", ignoreCase = true)
 
                                             if (isResolved) {
-                                                viewModel.markStatus(post, "OPEN")
+                                                viewModel.markStatus(post, "ACTIVE")
                                             } else {
                                                 postToResolve = post
                                             }
                                         }
                                     },
+                                    onCloseClick = {
+                                        postToClose = post
+                                    },
+                                    onDeleteClick = {
+                                        postToDelete = post
+                                    }
 
-                                    onDeleteClick = { postToDelete = post }
                                 )
                             }
                         }
@@ -462,6 +530,7 @@ private fun MyPostCard(
     onClick: () -> Unit,
     onEditClick: () -> Unit,
     onToggleStatus: () -> Unit,
+    onCloseClick: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -484,7 +553,7 @@ private fun MyPostCard(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Ảnh thu nhỏ (Thumbnail)
+                // Ảnh thu nhỏ
                 val imageUrl = post.images.firstOrNull()
                 Box(
                     modifier = Modifier
@@ -534,7 +603,6 @@ private fun MyPostCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Badge Loại tin (Mất đồ / Nhặt được)
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = if (post.isLost) Color(0xFFFFEBE8) else Color(0xFFE6F4EA)
@@ -631,6 +699,27 @@ private fun MyPostCard(
                 thickness = 1.dp
             )
             Spacer(Modifier.height(8.dp))
+
+            if (!isResolved) {
+                TextButton(
+                    onClick = onCloseClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Text(
+                        text = "Tạm đóng tin",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
 
 
             Row(
