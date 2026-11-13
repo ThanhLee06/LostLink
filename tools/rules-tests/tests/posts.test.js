@@ -21,6 +21,7 @@ const {
   seedDoc,
   seedMediaAsset,
   seedUserProfile,
+  serverTimestamp,
   setDoc,
   setupRulesTestEnv,
   studentDb,
@@ -450,6 +451,67 @@ describe('posts security rules (Contract §3.1, §3.3, §3.4, §3.6, §6)', () =
   });
 
   describe('B0-T01 / B0-T08: Atomic update, status transitions, and HIDDEN lock', () => {
+    const legacyImageUrl = 'https://res.cloudinary.com/demo/image/upload/legacy.jpg';
+    const legacyMedia = { mediaAssetIds: [], imageUrl: legacyImageUrl, imageUrls: [legacyImageUrl] };
+
+    test('allows legacy-image status transitions without changing media or claiming ownership', async () => {
+      await seedCanonicalPost(testEnv, 'legacy-status', legacyMedia);
+      const db = studentDb(testEnv);
+      for (const [index, status] of ['RESOLVED', 'CLOSED', 'OPEN'].entries()) {
+        await assertSucceeds(updatePostAtomically(db, 'legacy-status', 'student-1', index + 2,
+          { status }, { changeType: 'STATUS' }));
+        const saved = (await getDoc(doc(db, 'posts', 'legacy-status'))).data();
+        expect(saved).toEqual(expect.objectContaining({ ...legacyMedia, status, version: index + 2 }));
+        expect(saved.imagePublicId).toBeNull();
+      }
+    });
+
+    test.each([
+      ['replace URL', { imageUrl: 'https://example.com/other.jpg', imageUrls: ['https://example.com/other.jpg'] }, 'STATUS'],
+      ['alter image list', { imageUrls: [legacyImageUrl, 'https://example.com/other.jpg'] }, 'STATUS'],
+      ['inject public ID', { imagePublicId: 'another-user/image' }, 'STATUS'],
+      ['attach unverified asset', { mediaAssetIds: ['unverified-asset'] }, 'STATUS'],
+      ['change content', { title: 'Changed while claiming STATUS' }, 'STATUS'],
+      ['use UPDATE event', {}, 'UPDATE'],
+    ])('does not use legacy compatibility to %s', async (_label, patch, changeType) => {
+      await seedCanonicalPost(testEnv, 'legacy-injection', legacyMedia);
+      await assertFails(updatePostAtomically(studentDb(testEnv), 'legacy-injection', 'student-1', 2,
+        { status: 'CLOSED', ...patch }, { changeType }));
+    });
+
+    test.each([
+      ['non-owner', 'student-2', null, 'VISIBLE'],
+      ['DELETING account', 'student-1', 'DELETING', 'VISIBLE'],
+      ['HIDDEN post', 'student-1', null, 'HIDDEN'],
+    ])('rejects legacy status changes for %s', async (_label, uid, accountStatus, moderationStatus) => {
+      await seedCanonicalPost(testEnv, 'legacy-denied', { ...legacyMedia, moderationStatus });
+      if (accountStatus) await seedAccountState(testEnv, uid, accountStatus);
+      await assertFails(updatePostAtomically(studentDb(testEnv, uid, `${uid}@ut.edu.vn`),
+        'legacy-denied', uid, 2, { status: 'CLOSED' }, { changeType: 'STATUS' }));
+    });
+
+    test('still requires an atomic event and consecutive version for legacy status changes', async () => {
+      await seedCanonicalPost(testEnv, 'legacy-event', legacyMedia);
+      const db = studentDb(testEnv);
+      await assertFails(updateDoc(doc(db, 'posts', 'legacy-event'), {
+        status: 'CLOSED', version: 2, updatedAt: serverTimestamp(),
+      }));
+      await assertFails(updatePostAtomically(db, 'legacy-event', 'student-1', 3,
+        { status: 'CLOSED' }, { changeType: 'STATUS' }));
+    });
+
+    test('allows replacing a legacy image with an owned READY signed asset', async () => {
+      await seedCanonicalPost(testEnv, 'legacy-replace', legacyMedia);
+      const secureUrl = 'https://res.cloudinary.com/demo/image/upload/verified.jpg';
+      await seedMediaAsset(testEnv, 'verified-asset', {
+        postId: 'legacy-replace', secureUrl, cloudinaryPublicId: 'student-1/verified',
+      });
+      await assertSucceeds(updatePostAtomically(studentDb(testEnv), 'legacy-replace', 'student-1', 2, {
+        mediaAssetIds: ['verified-asset'], imageUrl: secureUrl, imageUrls: [secureUrl],
+        imagePublicId: 'student-1/verified',
+      }));
+    });
+
     test('allows owner atomic UPDATE and STATUS transitions (OPEN <-> RESOLVED <-> CLOSED)', async () => {
       await seedCanonicalPost(testEnv, 'post-edit', { version: 1 });
       const db = studentDb(testEnv, 'student-1', 'student1@ut.edu.vn');

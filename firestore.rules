@@ -111,6 +111,20 @@ service cloud.firestore {
         );
     }
 
+    function keepsLegacyImageForStatusUpdate(d, postId) {
+      let eventPath = /databases/$(database)/documents/post_events/$(postId + '_v' + string(d.version));
+      return resource.data.mediaAssetIds is list
+        && resource.data.mediaAssetIds.size() == 0
+        && resource.data.imageUrl is string
+        && resource.data.imageUrl.matches('^https://.+')
+        && resource.data.imageUrls is list
+        && resource.data.imageUrls.size() == 1
+        && resource.data.imageUrls[0] == resource.data.imageUrl
+        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'version'])
+        && existsAfter(eventPath)
+        && getAfter(eventPath).data.changeType == 'STATUS';
+    }
+
     function isValidReadyMediaAsset(d, postId, assetId) {
       return exists(/databases/$(database)/documents/media_assets/$(assetId))
         && matchesReadyMediaAsset(
@@ -156,7 +170,7 @@ service cloud.firestore {
         );
     }
 
-    function hasValidPostShape(d, postId) {
+    function hasValidPostShape(d, postId, allowLegacyStatus) {
       let requiredKeys = [
         'title', 'type', 'categoryId', 'description',
         'areaChoice', 'areaId', 'areaOtherText', 'location', 'locationNote',
@@ -197,7 +211,10 @@ service cloud.firestore {
         && d.authorName is string
         && d.version is int
         && d.version >= 1
-        && isValidPostMedia(d, postId);
+        && (
+          isValidPostMedia(d, postId)
+          || (allowLegacyStatus && keepsLegacyImageForStatusUpdate(d, postId))
+        );
     }
 
     // ─── post_events & atomic transaction helpers ────────────────────────────
@@ -407,7 +424,7 @@ service cloud.firestore {
         && postId.size() <= 128
         && !exists(/databases/$(database)/documents/post_tombstones/$(postId))
         && isPostReservationAvailable(postId)
-        && hasValidPostShape(request.resource.data, postId)
+        && hasValidPostShape(request.resource.data, postId, false)
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.status == 'OPEN'
         && request.resource.data.moderationStatus == 'VISIBLE'
@@ -421,7 +438,7 @@ service cloud.firestore {
         && isAccountActive()
         && resource.data.authorId == request.auth.uid
         && resource.data.moderationStatus == 'VISIBLE'
-        && hasValidPostShape(request.resource.data, postId)
+        && hasValidPostShape(request.resource.data, postId, true)
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.authorName == resource.data.authorName
         && request.resource.data.contactEmail == resource.data.contactEmail
