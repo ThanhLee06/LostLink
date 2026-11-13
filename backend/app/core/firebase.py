@@ -15,13 +15,14 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import suppress
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import firebase_admin
 from firebase_admin import credentials
-from firebase_admin import firestore as admin_firestore
 from google.auth.credentials import AnonymousCredentials
-from google.cloud.firestore import Client as FirestoreClient
+
+if TYPE_CHECKING:
+    from google.cloud.firestore import Client as FirestoreClient
 
 from app.core.config import get_settings
 
@@ -80,11 +81,21 @@ def init_firebase() -> None:
         cred = credentials.ApplicationDefault()
         logger.info("Firebase: using Application Default Credentials")
 
-    _app = firebase_admin.initialize_app(
+    from firebase_admin import firestore as admin_firestore
+
+    app_instance = firebase_admin.initialize_app(
         cred,
         {"projectId": settings.firebase_project_id},
     )
-    _firestore_client = admin_firestore.client(_app)
+    try:
+        client_instance = admin_firestore.client(app_instance)
+    except Exception:
+        with suppress(Exception):
+            firebase_admin.delete_app(app_instance)
+        raise
+
+    _app = app_instance
+    _firestore_client = client_instance
     logger.info(
         "Firebase Admin SDK initialised (project=%s, emulator=%s, env=%s)",
         settings.firebase_project_id,

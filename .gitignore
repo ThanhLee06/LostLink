@@ -33,8 +33,9 @@ render.experimental.xml
 # Android Profiling
 *.hprof
 
-# Local AI runtime output and encrypted credentials
-/.ai/.local/
+# Local AI tooling and runtime
+/.ai/
+/AGENTS.md
 
 # Python / Backend virtual env, caches, and secrets
 backend/.venv/
@@ -42,6 +43,7 @@ backend/.env
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.egg-info/
 
 # Node / Firebase Emulator / Rules tests
 node_modules/

@@ -6,14 +6,13 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "firebase-admin>=6.5",
-    "google-genai>=1.0",
-    "cloudinary>=1.40",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.4",
-    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
+ai = ["google-genai>=1.0"]
+media = ["cloudinary>=1.40", "httpx>=0.27"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
@@ -30,5 +29,5 @@ include = ["app*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+testpaths = ["core_tests", "tests"]
 pythonpath = ["."]

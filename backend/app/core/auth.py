@@ -16,12 +16,14 @@ import asyncio
 import hmac
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import firebase_admin.auth as fb_auth
 from fastapi import Depends, Header, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from google.cloud.firestore import Client as FirestoreClient
+
+if TYPE_CHECKING:
+    from google.cloud.firestore import Client as FirestoreClient
 
 from app.core.config import get_settings
 from app.core.errors import ApiHTTPException
