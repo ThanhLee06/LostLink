@@ -42,12 +42,13 @@ data class HomePost(
             val photos = (data["imageUrls"] as? List<*>)?.filterIsInstance<String>().orEmpty() +
                 listOf(text("imageUrl"), text("imageUri"))
             val contactEmail = text("contactEmail")
+
             val allowContact = (data["allowContact"] as? Boolean)
                 ?: (data["allowEmailContact"] as? Boolean)
                 ?: contactEmail.isNotBlank()
+
             val authorName = text("authorName")
             val authorId = text("authorId")
-
             return HomePost(
                 id = id,
                 title = title,

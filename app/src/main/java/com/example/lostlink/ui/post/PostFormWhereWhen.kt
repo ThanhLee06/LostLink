@@ -117,7 +117,24 @@ fun PostFormWhereWhen(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         // ───────── KHU VỰC ─────────
-        FormSectionLabel(Icons.Outlined.Place, state.type.areaLabel())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(Icons.Outlined.Place, state.type.areaLabel())
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -242,8 +259,25 @@ fun PostFormWhereWhen(
             thickness = 1.dp
         )
 
-        // ───────── THỜI GIAN ─────────
-        FormSectionLabel(Icons.Outlined.AccessTime, state.type.timeLabel())
+        // THỜI GIAN 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(Icons.Outlined.AccessTime, state.type.timeLabel())
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -524,8 +558,6 @@ private fun DateTimeField(
                 TextButton(onClick = {
                     val base = pickedDate
                     if (base != null) {
-                        // DatePicker trả về 0h UTC của ngày đã chọn, nên đọc ngày theo UTC
-                        // rồi ghép giờ/phút theo múi giờ của máy
                         val utc = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                             .apply { timeInMillis = base }
                         val local = Calendar.getInstance().apply {

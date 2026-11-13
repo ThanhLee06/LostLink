@@ -13,17 +13,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.lostlink.ui.home.*
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,9 +42,14 @@ fun PostDetailScreen(
     state: PostDetailState,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    currentUserId: String? = null
+    onEditPost: ((HomePost) -> Unit)? = null,
+    currentUserId: String? = null,
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
+    val activeUserId = currentUserId ?: remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
+    val isOwner = state.detail != null && state.detail.post.authorId.isNotBlank() && state.detail.post.authorId == activeUserId
+
     Column(Modifier.fillMaxSize().background(colors.background).testTag("post-detail")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(HomeTokens.Target)
@@ -44,7 +58,13 @@ fun PostDetailScreen(
             }
             Text("Chi tiết tin", style = MaterialTheme.typography.titleMedium, color = colors.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.weight(1f).semantics { heading() })
-            Spacer(Modifier.width(HomeTokens.Target))
+            if (isOwner && onEditPost != null) {
+                TextButton(onClick = { state.detail?.post?.let { onEditPost(it) } }) {
+                    Text("Chỉnh sửa", color = colors.primary, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Spacer(Modifier.width(HomeTokens.Target))
+            }
         }
         Box(Modifier.weight(1f)) {
             when (state.status) {
@@ -54,7 +74,7 @@ fun PostDetailScreen(
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                     Text("Đang tải bài đăng…", color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
-                DetailStatus.READY -> state.detail?.let { detail -> key(detail.post.id) { DetailContent(detail, currentUserId) } }
+                DetailStatus.READY -> state.detail?.let { detail -> key(detail.post.id) { DetailContent(detail, activeUserId, onEditPost, onPostChanged, onBack, onRetry) } }
                 else -> DetailFailure(state, onBack, onRetry)
             }
         }
@@ -62,7 +82,14 @@ fun PostDetailScreen(
 }
 
 @Composable
-private fun DetailContent(detail: PostDetail, currentUserId: String? = null) {
+private fun DetailContent(
+    detail: PostDetail,
+    currentUserId: String? = null,
+    onEditPost: ((HomePost) -> Unit)? = null,
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null,
+    onBack: () -> Unit = {},
+    onRetry: () -> Unit = {}
+) {
     val post = detail.post
     val context = LocalContext.current
     val isAuthor = !currentUserId.isNullOrBlank() && post.authorId.isNotBlank() && currentUserId == post.authorId
@@ -76,10 +103,10 @@ private fun DetailContent(detail: PostDetail, currentUserId: String? = null) {
             item(key = "overview") {
                 if (wide) Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
                     PostDetailGallery(post.images, post.title, Modifier.weight(1f), wide = true)
-                    DetailSummary(post, Modifier.weight(1f))
+                    DetailSummary(post, Modifier.weight(1f), isAuthor, onEditPost, onPostChanged, onBack, onRetry)
                 } else Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     PostDetailGallery(post.images, post.title)
-                    DetailSummary(post)
+                    DetailSummary(post, isOwner = isAuthor, onEditPost = onEditPost, onPostChanged = onPostChanged, onBack = onBack, onRetry = onRetry)
                 }
             }
             item(key = "facts") { DetailFacts(detail) }
@@ -211,8 +238,117 @@ private fun DetailContent(detail: PostDetail, currentUserId: String? = null) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailSummary(post: HomePost, modifier: Modifier = Modifier) {
+private fun DetailSummary(
+    post: HomePost,
+    modifier: Modifier = Modifier,
+    isOwner: Boolean = false,
+    onEditPost: ((HomePost) -> Unit)? = null,
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null,
+    onBack: () -> Unit = {},
+    onRetry: () -> Unit = {}
+) {
     val colors = MaterialTheme.colorScheme
+    var showResolveDialog by remember { mutableStateOf(false) }
+    var showCloseDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val isResolvedOrClosed = post.status.equals("RESOLVED", ignoreCase = true) ||
+            post.status.equals("CLOSED", ignoreCase = true)
+    val resolveActionLabel = if (post.isLost) "Đã tìm thấy đồ" else "Đã trao trả cho người mất"
+
+    if (showResolveDialog) {
+        AlertDialog(
+            onDismissRequest = { showResolveDialog = false },
+            icon = {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF137333),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Xác nhận hoàn thành", fontWeight = FontWeight.Bold) },
+            text = { Text("Bạn có chắc chắn muốn xác nhận \"$resolveActionLabel\" cho bài đăng này không?\n\nBài đăng sẽ được chuyển sang mục Hoàn tất.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResolveDialog = false
+                        FirebaseFirestore.getInstance().collection("posts").document(post.id)
+                            .update("status", "RESOLVED", "updatedAt", FieldValue.serverTimestamp())
+                            .addOnSuccessListener {
+                                onPostChanged?.invoke(post.id, "RESOLVED")
+                                onRetry()
+                            }
+                    }
+                ) {
+                    Text("Xác nhận", color = Color(0xFF137333), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResolveDialog = false }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (showCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { showCloseDialog = false },
+            icon = {
+                Icon(
+                    Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Tạm đóng tin?", fontWeight = FontWeight.Bold) },
+            text = { Text("Bài đăng sẽ ẩn khỏi Trang chủ và Tìm kiếm. Bạn có thể mở lại bất cứ lúc nào.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCloseDialog = false
+                        FirebaseFirestore.getInstance().collection("posts").document(post.id)
+                            .update("status", "CLOSED", "updatedAt", FieldValue.serverTimestamp())
+                            .addOnSuccessListener {
+                                onPostChanged?.invoke(post.id, "CLOSED")
+                                onRetry()
+                            }
+                    }
+                ) {
+                    Text("Tạm đóng", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloseDialog = false }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Xóa bài viết?", fontWeight = FontWeight.Bold) },
+            text = { Text("Hành động này không thể hoàn tác. Bạn có chắc chắn muốn xóa bài viết này không?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        FirebaseFirestore.getInstance().collection("posts").document(post.id).delete()
+                            .addOnSuccessListener {
+                                onPostChanged?.invoke(post.id, "DELETED")
+                                onBack()
+                            }
+                    }
+                ) {
+                    Text("Xóa bài", color = colors.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Hủy") }
+            }
+        )
+    }
+
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
             itemVerticalAlignment = Alignment.CenterVertically) {
@@ -232,6 +368,74 @@ private fun DetailSummary(post: HomePost, modifier: Modifier = Modifier) {
             else -> "Trạng thái: ${post.status}"
         }
         if (status != null) Text(status, color = colors.primary, style = MaterialTheme.typography.labelLarge)
+
+        if (isOwner) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                if (!isResolvedOrClosed) {
+                    Button(
+                        onClick = { showResolveDialog = true },
+                        shape = HomeTokens.ImageShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF137333)),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    ) {
+                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(resolveActionLabel, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            FirebaseFirestore.getInstance().collection("posts").document(post.id)
+                                .update("status", "ACTIVE", "updatedAt", FieldValue.serverTimestamp())
+                                .addOnSuccessListener {
+                                    onPostChanged?.invoke(post.id, "ACTIVE")
+                                    onRetry()
+                                }
+                        },
+                        shape = HomeTokens.ImageShape,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                    ) {
+                        Text("Mở lại bài đăng", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onEditPost != null) {
+                        OutlinedButton(
+                            onClick = { onEditPost(post) },
+                            shape = HomeTokens.ImageShape,
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                        ) {
+                            Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Chỉnh sửa", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (!isResolvedOrClosed) {
+                        OutlinedButton(
+                            onClick = { showCloseDialog = true },
+                            shape = HomeTokens.ImageShape,
+                            modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                        ) {
+                            Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Tạm đóng", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                TextButton(
+                    onClick = { showDeleteDialog = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Xóa bài viết", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
     }
 }
 

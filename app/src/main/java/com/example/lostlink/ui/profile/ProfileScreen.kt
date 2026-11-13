@@ -9,10 +9,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -23,9 +27,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.lostlink.ui.home.FeedNotice
 import com.example.lostlink.ui.home.HomeIcon
-import com.example.lostlink.ui.home.HomePostCard
+import com.example.lostlink.ui.home.HomePost
 import com.example.lostlink.ui.home.HomeTokens
 import com.example.lostlink.ui.home.LineIcon
+import com.example.lostlink.ui.myposts.MyPostCard
 
 @Composable
 fun ProfileScreen(
@@ -33,6 +38,8 @@ fun ProfileScreen(
     onPost: (String) -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
+    onEditPost: ((HomePost) -> Unit)? = null,
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null,
 ) {
     val state = viewModel.state
     val colors = MaterialTheme.colorScheme
@@ -42,6 +49,10 @@ fun ProfileScreen(
     var showPersonalInfoDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showSignOutConfirmDialog by remember { mutableStateOf(false) }
+
+    var postToDelete by remember { mutableStateOf<HomePost?>(null) }
+    var postToResolve by remember { mutableStateOf<HomePost?>(null) }
+    var postToClose by remember { mutableStateOf<HomePost?>(null) }
 
     BoxWithConstraints(modifier.fillMaxSize().background(colors.background)) {
         val gutter = if (maxWidth >= 600.dp) 32.dp else HomeTokens.Gutter
@@ -154,7 +165,24 @@ fun ProfileScreen(
                 }
             } else {
                 items(state.filteredPosts, key = { "user_post:${it.id}" }) { post ->
-                    HomePostCard(post = post, onClick = { onPost(post.id) })
+                    MyPostCard(
+                        post = post,
+                        onClick = { onPost(post.id) },
+                        onEditClick = { onEditPost?.invoke(post) },
+                        onToggleStatus = {
+                            val isResolved = post.status.equals("RESOLVED", ignoreCase = true) ||
+                                    post.status.equals("CLOSED", ignoreCase = true)
+                            if (isResolved) {
+                                viewModel.markStatus(post, "ACTIVE") {
+                                    onPostChanged?.invoke(post.id, "ACTIVE")
+                                }
+                            } else {
+                                postToResolve = post
+                            }
+                        },
+                        onCloseClick = { postToClose = post },
+                        onDeleteClick = { postToDelete = post }
+                    )
                 }
             }
 
@@ -249,6 +277,110 @@ fun ProfileScreen(
     }
 
     // Dialogs
+    if (postToClose != null) {
+        val post = postToClose!!
+        AlertDialog(
+            onDismissRequest = { postToClose = null },
+            icon = {
+                Icon(
+                    Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Tạm đóng tin?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Bạn có chắc chắn muốn tạm đóng bài đăng \"${post.title}\" không?\n\n" +
+                            "Bài đăng sẽ ẩn khỏi Trang chủ nhưng vẫn còn trong Tin của tôi. Bạn có thể mở lại bất cứ lúc nào."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.markStatus(post, "CLOSED") {
+                            onPostChanged?.invoke(post.id, "CLOSED")
+                        }
+                        postToClose = null
+                    }
+                ) {
+                    Text("Tạm đóng tin", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { postToClose = null }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (postToResolve != null) {
+        val post = postToResolve!!
+        val actionName = if (post.isLost) "Đã tìm thấy đồ" else "Đã trao trả cho người mất"
+        AlertDialog(
+            onDismissRequest = { postToResolve = null },
+            icon = {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF137333),
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = { Text("Xác nhận hoàn thành", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Bạn có chắc chắn muốn xác nhận \"$actionName\" cho bài đăng \"${post.title}\" không?\n\n" +
+                            "Bài đăng sẽ được chuyển sang mục Hoàn tất."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.markStatus(post, "RESOLVED") {
+                            onPostChanged?.invoke(post.id, "RESOLVED")
+                        }
+                        postToResolve = null
+                    }
+                ) {
+                    Text("Xác nhận", color = Color(0xFF137333), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { postToResolve = null }) { Text("Hủy") }
+            }
+        )
+    }
+
+    if (postToDelete != null) {
+        val post = postToDelete!!
+        AlertDialog(
+            onDismissRequest = { postToDelete = null },
+            title = { Text("Xoá bài đăng?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Bạn có chắc chắn muốn xoá vĩnh viễn bài đăng \"${post.title}\"? " +
+                            "Hành động này không thể hoàn tác."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deletePost(post.id) {
+                            onPostChanged?.invoke(post.id, "DELETED")
+                        }
+                        postToDelete = null
+                    }
+                ) {
+                    Text("Xoá bài", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { postToDelete = null }) { Text("Hủy") }
+            }
+        )
+    }
+
     if (showEditNameDialog) {
         EditNameDialog(
             currentName = state.profile.displayName,

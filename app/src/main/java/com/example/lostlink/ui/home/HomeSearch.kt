@@ -16,7 +16,8 @@ fun filterLoadedHomePosts(posts: List<HomePost>, query: String, filter: HomePost
     val words = foldHomeSearch(query.trim()).split(Regex("\\s+")).filter(String::isNotEmpty)
     val since = timeFilter.startAt(now)
     return posts.filter { post ->
-        (filter == HomePostFilter.ALL || post.type == filter.name) &&
+        !post.status.equals("CLOSED", ignoreCase = true) &&
+            (filter == HomePostFilter.ALL || post.type == filter.name) &&
             (since == null || post.createdAt in since..now) &&
             (categories.isEmpty() || HomeCategory.from(post.categoryId.ifBlank { post.category })?.id in categories) &&
             (areas.isEmpty() || HomeArea.entries.any { it.id in areas && it.matches(post) }) &&

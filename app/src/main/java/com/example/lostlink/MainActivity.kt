@@ -28,6 +28,8 @@ import com.example.lostlink.ui.home.HomeTheme
 import com.example.lostlink.ui.detail.PostDetailNavigation
 import com.example.lostlink.ui.detail.PostDetailRoute
 import com.example.lostlink.ui.detail.PostDetailViewModel
+import com.example.lostlink.ui.home.HomePost
+import com.example.lostlink.ui.post.EditPostScreen
 import com.example.lostlink.ui.post.PostFormScreen
 import com.example.lostlink.ui.post.PostFormViewModel
 import com.google.firebase.auth.FirebaseAuth
@@ -66,6 +68,7 @@ class MainActivity : ComponentActivity() {
             if (accountId != null) key(accountId) {
                 var selectedPostId by rememberSaveable { mutableStateOf<String?>(null) }
                 var isCreatingPost by rememberSaveable { mutableStateOf(false) }
+                var editingPost by remember { mutableStateOf<HomePost?>(null) }
 
                 fun closeDetail() { selectedPostId = null; detailModel.clearSelection() }
                 LaunchedEffect(pendingPostId) {
@@ -90,6 +93,19 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+                } else if (editingPost != null) {
+                    HomeTheme {
+                        EditPostScreen(
+                            post = editingPost!!,
+                            onBack = { editingPost = null },
+                            onSaveSuccess = {
+                                editingPost = null
+                                model.refreshAfterPostModified()
+                                detailModel.retry()
+                            },
+                            modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding()
+                        )
+                    }
                 } else {
                     HomeRoute(
                         model = model,
@@ -101,11 +117,37 @@ class MainActivity : ComponentActivity() {
                                 isCreatingPost = true
                             }
                         },
-                        detailContent = selectedPostId?.let { id -> ({ PostDetailRoute(detailModel, id, ::closeDetail, currentUserId = accountId) }) },
+                        onEditPost = { post ->
+                            editingPost = post
+                        },
+                        detailContent = selectedPostId?.let { id ->
+                            ({
+                                PostDetailRoute(
+                                    detailModel,
+                                    id,
+                                    ::closeDetail,
+                                    currentUserId = accountId,
+                                    onEditPost = { post ->
+                                        editingPost = post
+                                    },
+                                    onPostChanged = { postId, action ->
+                                        if (action == "DELETED") {
+                                            model.removePost(postId)
+                                            closeDetail()
+                                        } else {
+                                            model.updatePostStatus(postId, action)
+                                            detailModel.retry()
+                                        }
+                                        model.refreshAfterPostModified()
+                                    }
+                                )
+                            })
+                        },
                         onReturnHome = ::closeDetail,
                         onSignOut = {
                             closeDetail()
                             isCreatingPost = false
+                            editingPost = null
                             pendingPostId = null
                             intent.removeExtra(PostDetailNavigation.EXTRA_POST_ID)
                             accounts.signOut()

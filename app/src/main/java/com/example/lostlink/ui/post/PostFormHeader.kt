@@ -19,7 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Info
@@ -191,6 +194,10 @@ fun PostFormHeader(
             onValueChange = onTitleChange,
             placeholder = { Text("Ví dụ: Ví màu nâu") },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                capitalization = KeyboardCapitalization.Sentences
+            ),
             isError = state.errors.title != null,
             supportingText = state.errors.title?.let { errorText -> { Text(errorText) } },
             shape = textFieldShape,
@@ -284,10 +291,27 @@ fun PostFormHeader(
             thickness = 1.dp
         )
 
-        FormSectionLabel(
-            icon = Icons.Outlined.Description,
-            title = "Đặc điểm nhận diện"
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormSectionLabel(
+                icon = Icons.Outlined.Description,
+                title = "Đặc điểm nhận diện"
+            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = "Không bắt buộc",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         OutlinedTextField(
             value = state.description,
@@ -295,6 +319,10 @@ fun PostFormHeader(
             placeholder = { Text(state.type.hint()) },
             minLines = 4,
             maxLines = 6,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                capitalization = KeyboardCapitalization.Sentences
+            ),
             isError = state.errors.description != null,
             supportingText = {
                 val error = state.errors.description

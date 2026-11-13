@@ -8,7 +8,6 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Source
 import java.util.Locale
 
-/** Detail-only projection; the shared Home model and Firestore schema stay unchanged. */
 data class PostDetail(val post: HomePost, val category: String = "") {
     companion object {
         fun fromDocument(id: String, fields: Map<String, Any?>): PostDetail {
@@ -20,7 +19,7 @@ data class PostDetail(val post: HomePost, val category: String = "") {
             return PostDetail(post, category)
         }
 
-        // The IDs and Vietnamese labels match the existing publisher's PostCategories contract.
+
         private val categories = mapOf("wallet" to "Ví", "bag" to "Túi, balo", "keys" to "Chìa khóa",
             "phone" to "Điện thoại", "documents" to "Giấy tờ, thẻ", "other" to "Khác")
     }

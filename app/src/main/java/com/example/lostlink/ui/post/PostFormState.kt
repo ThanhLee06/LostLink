@@ -85,8 +85,6 @@ object PostFormValidator {
             },
             category = if (PostCategories.find(s.categoryId) == null) "Chọn danh mục cho món đồ" else null,
             description = when {
-                desc.isEmpty() -> "Mô tả vài đặc điểm để dễ nhận ra món đồ"
-                desc.length < DESCRIPTION_MIN -> "Mô tả hơi ngắn, thêm màu sắc hoặc kiểu dáng nhé"
                 desc.length > DESCRIPTION_MAX -> "Mô tả tối đa $DESCRIPTION_MAX ký tự"
                 else -> null
             },

@@ -9,6 +9,7 @@ import com.example.lostlink.ui.home.HomePost
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
@@ -145,6 +146,40 @@ class ProfileViewModel : ViewModel() {
 
     fun selectTab(tab: ProfilePostTab) {
         state = state.copy(selectedTab = tab)
+    }
+
+    fun markStatus(post: HomePost, newStatus: String, onDone: ((Result<Unit>) -> Unit)? = null) {
+        firestore.collection("posts").document(post.id)
+            .update(
+                mapOf(
+                    "status" to newStatus,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            .addOnSuccessListener {
+                state = state.copy(
+                    userPosts = state.userPosts.map {
+                        if (it.id == post.id) it.copy(status = newStatus) else it
+                    }
+                )
+                onDone?.invoke(Result.success(Unit))
+            }
+            .addOnFailureListener { error ->
+                onDone?.invoke(Result.failure(error))
+            }
+    }
+
+    fun deletePost(postId: String, onDone: ((Result<Unit>) -> Unit)? = null) {
+        firestore.collection("posts").document(postId).delete()
+            .addOnSuccessListener {
+                state = state.copy(
+                    userPosts = state.userPosts.filterNot { it.id == postId }
+                )
+                onDone?.invoke(Result.success(Unit))
+            }
+            .addOnFailureListener { error ->
+                onDone?.invoke(Result.failure(error))
+            }
     }
 
     fun toggleNotifications() {
