@@ -175,6 +175,9 @@ class PostRepository(
                         val existingAssetId = oldAssets.firstOrNull()?.takeIf { it.isNotBlank() }
                         val existingUrl = existing.getString("imageUrl")?.takeIf { it.startsWith("https://") }
                         val existingPublicId = existing.getString("imagePublicId")?.takeIf { it.isNotBlank() }
+                        if (existingAssetId == null && existingUrl != null) {
+                            throw IllegalStateException("Ảnh cũ chưa có thông tin sở hữu. Vui lòng chọn ảnh thay thế hoặc gỡ ảnh trước khi lưu.")
+                        }
                         if (existingAssetId != null && existingUrl != null) {
                             UploadedMedia(
                                 assetId = existingAssetId,
