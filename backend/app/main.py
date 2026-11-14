@@ -14,7 +14,7 @@ from app.core.auth import require_active_student
 from app.core.config import get_settings
 from app.core.errors import TraceIdMiddleware, register_exception_handlers
 from app.core.firebase import get_firestore, init_firebase
-from app.routers import account, events, health, media
+from app.routers import account, events, health, media, search
 from app.worker.runner import WorkerLoop, recover_pending_on_boot
 
 
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     application.include_router(events.router)
     application.include_router(media.router)
     application.include_router(account.router)
+    application.include_router(search.router)
 
     @application.get("/api/v1/session")
     async def session(decoded: Dict[str, Any] = Depends(require_active_student)) -> Dict[str, str]:
