@@ -79,15 +79,41 @@ internal fun TypeBadge(post: HomePost, modifier: Modifier = Modifier, detail: Bo
                 style = MaterialTheme.typography.labelMedium
             )
         }
-        if (post.isResolved) {
+        if (post.isHidden) {
+            Surface(
+                modifier = Modifier.testTag("badge-hidden"),
+                color = colors.errorContainer,
+                contentColor = colors.onErrorContainer,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = "Đã bị ẩn",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        } else if (post.isResolved) {
             Surface(
                 modifier = Modifier.testTag("badge-resolved"),
+                color = colors.tertiaryContainer,
+                contentColor = colors.onTertiaryContainer,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = "Đã giải quyết",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        } else if (post.isClosed || post.isCompleted) {
+            Surface(
+                modifier = Modifier.testTag("badge-closed"),
                 color = colors.surfaceVariant,
                 contentColor = colors.onSurfaceVariant,
                 shape = RoundedCornerShape(6.dp)
             ) {
                 Text(
-                    text = if (post.status.equals("CLOSED", true)) "Đã đóng" else "Đã giải quyết",
+                    text = "Đã đóng",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelMedium
                 )

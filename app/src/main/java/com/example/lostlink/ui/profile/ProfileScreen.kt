@@ -168,13 +168,13 @@ fun ProfileScreen(
                     MyPostCard(
                         post = post,
                         onClick = { onPost(post.id) },
-                        onEditClick = { onEditPost?.invoke(post) },
+                        onEditClick = { if (!post.isHidden) onEditPost?.invoke(post) },
                         onToggleStatus = {
                             val isResolved = post.status.equals("RESOLVED", ignoreCase = true) ||
                                     post.status.equals("CLOSED", ignoreCase = true)
                             if (isResolved) {
-                                viewModel.markStatus(post, "ACTIVE") {
-                                    onPostChanged?.invoke(post.id, "ACTIVE")
+                                viewModel.markStatus(post, "OPEN") { result ->
+                                    if (result.isSuccess) onPostChanged?.invoke(post.id, "OPEN")
                                 }
                             } else {
                                 postToResolve = post
@@ -299,8 +299,8 @@ fun ProfileScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.markStatus(post, "CLOSED") {
-                            onPostChanged?.invoke(post.id, "CLOSED")
+                        viewModel.markStatus(post, "CLOSED") { result ->
+                            if (result.isSuccess) onPostChanged?.invoke(post.id, "CLOSED")
                         }
                         postToClose = null
                     }
@@ -337,8 +337,8 @@ fun ProfileScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.markStatus(post, "RESOLVED") {
-                            onPostChanged?.invoke(post.id, "RESOLVED")
+                        viewModel.markStatus(post, "RESOLVED") { result ->
+                            if (result.isSuccess) onPostChanged?.invoke(post.id, "RESOLVED")
                         }
                         postToResolve = null
                     }
@@ -366,8 +366,8 @@ fun ProfileScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deletePost(post.id) {
-                            onPostChanged?.invoke(post.id, "DELETED")
+                        viewModel.deletePost(post.id) { result ->
+                            if (result.isSuccess) onPostChanged?.invoke(post.id, "DELETED")
                         }
                         postToDelete = null
                     }

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.lostlink.data.PostCreationDataSource
+import com.example.lostlink.data.UploadedMedia
 import com.example.lostlink.ui.post.PostFormScreen
 import com.example.lostlink.ui.post.PostFormState
 import com.example.lostlink.ui.post.PostFormViewModel
@@ -30,12 +31,27 @@ class PostFormSubmissionUiTest {
         var gate: CompletableDeferred<Unit>? = null
         override fun isActiveAccount(uid: String) = uid == "user-a"
         override suspend fun postExists(uid: String, postId: String) = exists
-        override suspend fun uploadImage(uid: String, uri: Uri): String {
+        override suspend fun uploadImage(uid: String, postId: String, uri: Uri): UploadedMedia {
             uploadCalls++
             if (failUpload) throw IOException("Upload failed")
-            return "https://res.cloudinary.com/test/image/upload/wallet.jpg"
+            return UploadedMedia(
+                assetId = "asset-ui-$uploadCalls",
+                secureUrl = "https://res.cloudinary.com/test/image/upload/wallet.jpg",
+                publicId = "lostlink/posts/$postId/asset-ui-$uploadCalls",
+            )
         }
-        override suspend fun createPost(uid: String, postId: String, draft: PostFormState, imageUrl: String?) {
+        override suspend fun createPost(uid: String, postId: String, draft: PostFormState, media: UploadedMedia?) {
+            createCalls++
+            gate?.await()
+            if (failWrite) throw IOException("Lost server response")
+        }
+        override suspend fun updatePost(
+            uid: String,
+            postId: String,
+            draft: PostFormState,
+            media: UploadedMedia?,
+            keepExistingMedia: Boolean,
+        ) {
             createCalls++
             gate?.await()
             if (failWrite) throw IOException("Lost server response")

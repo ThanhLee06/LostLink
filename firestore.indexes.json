@@ -1,0 +1,138 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderationStatus", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderationStatus", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchJob.status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "notifyJob.status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mediaCleanupJob.status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchJob.status", "order": "ASCENDING" },
+        { "fieldPath": "searchJob.lockExpiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "notifyJob.status", "order": "ASCENDING" },
+        { "fieldPath": "notifyJob.lockExpiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "mediaCleanupJob.status", "order": "ASCENDING" },
+        { "fieldPath": "mediaCleanupJob.lockExpiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_embeddings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "vector",
+          "vectorConfig": {
+            "dimension": 768,
+            "flat": {}
+          }
+        }
+      ]
+    },
+    {
+      "collectionGroup": "post_embeddings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderationStatus", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        {
+          "fieldPath": "vector",
+          "vectorConfig": {
+            "dimension": 768,
+            "flat": {}
+          }
+        }
+      ]
+    },
+    {
+      "collectionGroup": "post_embeddings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderationStatus", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "postCreatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "post_embeddings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderationStatus", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

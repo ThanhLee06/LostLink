@@ -150,17 +150,29 @@ class CombinedFilterTest {
         val resolvedPost = HomePost("2", "Chìa khóa", "FOUND", "CS1", now, status = "RESOLVED")
         val closedPost = HomePost("3", "Thẻ", "LOST", "CS1", now, status = "CLOSED")
         val completedPost = HomePost("4", "Balo", "LOST", "CS1", now, status = "COMPLETED")
+        val hiddenPost = HomePost("5", "Áo", "LOST", "CS1", now, status = "OPEN", moderationStatus = "HIDDEN")
 
         assertTrue(openPost.isOpened)
+        assertTrue(openPost.isActive)
         assertFalse(openPost.isResolved)
+        assertFalse(openPost.isCompleted)
+        assertTrue(openPost.isVisibleOnFeed)
 
         assertTrue(resolvedPost.isResolved)
+        assertTrue(resolvedPost.isCompleted)
         assertFalse(resolvedPost.isOpened)
+        assertTrue(resolvedPost.isVisibleOnFeed)
 
-        assertTrue(closedPost.isResolved)
+        assertTrue(closedPost.isClosed)
+        assertFalse(closedPost.isResolved)
+        assertTrue(closedPost.isCompleted)
         assertFalse(closedPost.isOpened)
+        assertFalse(closedPost.isVisibleOnFeed)
 
-        assertTrue(completedPost.isResolved)
+        assertTrue(completedPost.isCompleted)
         assertFalse(completedPost.isOpened)
+
+        assertTrue(hiddenPost.isHidden)
+        assertFalse(hiddenPost.isVisibleOnFeed)
     }
 }

@@ -1,28 +1,606 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ─── Auth & account state helpers ────────────────────────────────────────
+
     function isVerifiedStudent() {
       return request.auth != null
+        && request.auth.uid != null
         && request.auth.token.email_verified == true
         && request.auth.token.email is string
-        && request.auth.token.email.matches('(?i)^.+@ut[.]edu[.]vn$');
+        && request.auth.token.email.lower().matches('^[^@\\s]+@ut[.]edu[.]vn$');
     }
+
+    // Missing account_states/{uid} => ACTIVE; any existing doc whose status != 'ACTIVE'
+    // (including DELETING, DELETED, null, missing, or malformed) fails closed.
+    function isActiveAccountData(data) {
+      return 'status' in data
+        && data.status is string
+        && data.status == 'ACTIVE';
+    }
+
+    function isAccountActive() {
+      return !exists(/databases/$(database)/documents/account_states/$(request.auth.uid))
+        || isActiveAccountData(
+          get(/databases/$(database)/documents/account_states/$(request.auth.uid)).data
+        );
+    }
+
+    // ─── Canonical post taxonomy & cross-field helpers ───────────────────────
+
+    function isValidPostCategory(categoryId) {
+      return categoryId in [
+        'wallet',
+        'student_card',
+        'electronics',
+        'keys',
+        'bag',
+        'documents',
+        'other'
+      ];
+    }
+
+    function isValidPostAreaId(areaId) {
+      return areaId in [
+        'campus_1',
+        'campus_2',
+        'campus_3',
+        'dormitory',
+        'a',
+        'b',
+        'c',
+        'd',
+        'e',
+        'canteen',
+        'library',
+        'parking',
+        'auditorium'
+      ];
+    }
+
+    function isValidAreaFields(d) {
+      return d.areaChoice in ['KNOWN', 'OTHER', 'UNKNOWN']
+        && d.areaId is string
+        && d.areaOtherText is string
+        && (
+          (d.areaChoice == 'KNOWN' && isValidPostAreaId(d.areaId))
+          || (d.areaChoice == 'OTHER' && d.areaId == '' && d.areaOtherText.trim().size() > 0)
+          || (d.areaChoice == 'UNKNOWN' && d.areaId == '')
+        );
+    }
+
+    function isValidTimeFields(d) {
+      return d.timeMode in ['EXACT', 'RANGE', 'DESCRIBED', 'UNKNOWN']
+        && (!('exactAtMillis' in d) || d.exactAtMillis == null || d.exactAtMillis is int)
+        && (!('rangeStartMillis' in d) || d.rangeStartMillis == null || d.rangeStartMillis is int)
+        && (!('rangeEndMillis' in d) || d.rangeEndMillis == null || d.rangeEndMillis is int)
+        && (!('timeNote' in d) || d.timeNote is string)
+        && (
+          (d.timeMode == 'EXACT' && 'exactAtMillis' in d && d.exactAtMillis is int)
+          || (
+            d.timeMode == 'RANGE'
+            && 'rangeStartMillis' in d
+            && 'rangeEndMillis' in d
+            && d.rangeStartMillis is int
+            && d.rangeEndMillis is int
+            && d.rangeEndMillis >= d.rangeStartMillis
+          )
+          || (d.timeMode == 'DESCRIBED' && 'timeNote' in d && d.timeNote is string && d.timeNote.trim().size() > 0)
+          || d.timeMode == 'UNKNOWN'
+        );
+    }
+
+    function isValidPostMedia(d, postId) {
+      return d.mediaAssetIds is list
+        && d.mediaAssetIds.size() <= 1
+        && d.imageUrls is list
+        && (
+          (
+            d.mediaAssetIds.size() == 0
+            && d.imageUrl == null
+            && d.imageUrls.size() == 0
+            && (!('imagePublicId' in d) || d.imagePublicId == null)
+          )
+          || (
+            d.mediaAssetIds.size() == 1
+            && d.mediaAssetIds[0] is string
+            && d.mediaAssetIds[0].size() > 0
+            && isValidReadyMediaAsset(d, postId, d.mediaAssetIds[0])
+          )
+        );
+    }
+
+    function keepsLegacyImageForStatusUpdate(d, postId) {
+      let eventPath = /databases/$(database)/documents/post_events/$(postId + '_v' + string(d.version));
+      return resource.data.mediaAssetIds is list
+        && resource.data.mediaAssetIds.size() == 0
+        && resource.data.imageUrl is string
+        && resource.data.imageUrl.matches('^https://.+')
+        && resource.data.imageUrls is list
+        && resource.data.imageUrls.size() == 1
+        && resource.data.imageUrls[0] == resource.data.imageUrl
+        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'version'])
+        && existsAfter(eventPath)
+        && getAfter(eventPath).data.changeType == 'STATUS';
+    }
+
+    function isValidReadyMediaAsset(d, postId, assetId) {
+      return exists(/databases/$(database)/documents/media_assets/$(assetId))
+        && matchesReadyMediaAsset(
+          d,
+          postId,
+          get(/databases/$(database)/documents/media_assets/$(assetId)).data
+        );
+    }
+
+    function matchesReadyMediaAsset(d, postId, asset) {
+      return asset.ownerUid == request.auth.uid
+        && asset.status == 'READY'
+        && asset.postId is string
+        && asset.postId == postId
+        && asset.secureUrl is string
+        && asset.secureUrl.matches('^https://.+')
+        && d.imageUrl == asset.secureUrl
+        && d.imageUrls.size() == 1
+        && d.imageUrls[0] == asset.secureUrl
+        && (!('imagePublicId' in d) || d.imagePublicId == null || d.imagePublicId == asset.cloudinaryPublicId);
+    }
+
+    function isUserEmailContactEnabled(userData) {
+      return !('allowEmailContact' in userData)
+        || userData.allowEmailContact != false;
+    }
+
+    function isValidContactSnapshot(d) {
+      return d.allowContact is bool
+        && d.contactEmail is string
+        && (
+          (d.allowContact == false && d.contactEmail == '')
+          || (
+            d.allowContact == true
+            && d.contactEmail.lower() == request.auth.token.email.lower()
+            && (
+              !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              || isUserEmailContactEnabled(
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+              )
+            )
+          )
+        );
+    }
+
+    function hasValidPostShape(d, postId, allowLegacyStatus) {
+      let requiredKeys = [
+        'title', 'type', 'categoryId', 'description',
+        'areaChoice', 'areaId', 'areaOtherText', 'location', 'locationNote',
+        'occurredAt', 'timeMode',
+        'status', 'moderationStatus', 'version',
+        'createdAt', 'updatedAt',
+        'authorId', 'authorName', 'contactEmail', 'allowContact',
+        'mediaAssetIds', 'imageUrl', 'imageUrls'
+      ];
+      let allowedKeys = [
+        'id', 'title', 'type', 'categoryId', 'category', 'description',
+        'areaChoice', 'areaId', 'areaOtherText', 'location', 'locationNote',
+        'occurredAt', 'timeMode', 'exactAtMillis', 'rangeStartMillis', 'rangeEndMillis', 'timeNote',
+        'status', 'moderationStatus', 'version',
+        'createdAt', 'updatedAt',
+        'authorId', 'authorName', 'contactEmail', 'allowContact',
+        'mediaAssetIds', 'imageUrl', 'imageUrls', 'imagePublicId'
+      ];
+      return !('moderationReason' in d)
+        && !('embedding' in d)
+        && d.keys().hasAll(requiredKeys)
+        && d.keys().hasOnly(allowedKeys)
+        && (!('id' in d) || (d.id is string && d.id == postId))
+        && d.title is string
+        && d.title.trim().size() >= 1
+        && d.title.trim().size() <= 80
+        && d.type in ['LOST', 'FOUND']
+        && isValidPostCategory(d.categoryId)
+        && (!('category' in d) || d.category == null || d.category is string)
+        && d.description is string
+        && d.description.trim().size() >= 10
+        && d.description.trim().size() <= 500
+        && isValidAreaFields(d)
+        && d.location is string
+        && d.locationNote is string
+        && d.occurredAt is string
+        && isValidTimeFields(d)
+        && d.authorName is string
+        && d.version is int
+        && d.version >= 1
+        && (
+          isValidPostMedia(d, postId)
+          || (allowLegacyStatus && keepsLegacyImageForStatusUpdate(d, postId))
+        );
+    }
+
+    // ─── post_events & atomic transaction helpers ────────────────────────────
+
+    function isValidInitialJobMap(job) {
+      let jobKeys = [
+        'status',
+        'attempts',
+        'claimToken',
+        'lockOwner',
+        'lockExpiresAt',
+        'nextRetryAt',
+        'lastError'
+      ];
+      return job is map
+        && job.keys().hasAll(jobKeys)
+        && job.keys().hasOnly(jobKeys)
+        && job.status == 'PENDING'
+        && job.attempts is int
+        && job.attempts == 0
+        && job.claimToken == null
+        && job.lockOwner == null
+        && job.lockExpiresAt == null
+        && job.nextRetryAt == null
+        && job.lastError == null;
+    }
+
+    function hasValidClientPostEventShape(ev, eventId) {
+      let eventKeys = [
+        'postId',
+        'authorId',
+        'postVersion',
+        'changeType',
+        'createdAt',
+        'imageAssetRefs',
+        'searchJob',
+        'notifyJob',
+        'mediaCleanupJob'
+      ];
+      return !('status' in ev)
+        && ev.keys().hasAll(eventKeys)
+        && ev.keys().hasOnly(eventKeys)
+        && ev.postId is string
+        && ev.postId.size() >= 1
+        && ev.postId.size() <= 128
+        && ev.authorId == request.auth.uid
+        && ev.postVersion is int
+        && ev.postVersion >= 1
+        && eventId == ev.postId + '_v' + string(ev.postVersion)
+        && ev.changeType in ['CREATE', 'UPDATE', 'STATUS', 'DELETE']
+        && ev.createdAt == request.time
+        && ev.imageAssetRefs is list
+        && ev.imageAssetRefs.size() <= 1
+        && (
+          ev.imageAssetRefs.size() == 0
+          || (
+            ev.imageAssetRefs[0] is string
+            && ev.imageAssetRefs[0].size() > 0
+            && (
+              !exists(/databases/$(database)/documents/media_assets/$(ev.imageAssetRefs[0]))
+              || get(/databases/$(database)/documents/media_assets/$(ev.imageAssetRefs[0])).data.ownerUid == request.auth.uid
+            )
+          )
+        )
+        && isValidInitialJobMap(ev.searchJob)
+        && isValidInitialJobMap(ev.notifyJob)
+        && isValidInitialJobMap(ev.mediaCleanupJob);
+    }
+
+    function isValidPostCreateEventCoupling(postId) {
+      let evPath = /databases/$(database)/documents/post_events/$(postId + '_v1');
+      return !exists(evPath)
+        && existsAfter(evPath)
+        && getAfter(evPath).data.postId == postId
+        && getAfter(evPath).data.authorId == request.auth.uid
+        && getAfter(evPath).data.postVersion == 1
+        && getAfter(evPath).data.changeType == 'CREATE';
+    }
+
+    function isValidPostUpdateEventCoupling(postId, newVersion, changedKeys) {
+      let evPath = /databases/$(database)/documents/post_events/$(postId + '_v' + string(newVersion));
+      return !exists(evPath)
+        && existsAfter(evPath)
+        && getAfter(evPath).data.postId == postId
+        && getAfter(evPath).data.authorId == request.auth.uid
+        && getAfter(evPath).data.postVersion == newVersion
+        && (
+          getAfter(evPath).data.changeType == 'UPDATE'
+          || (
+            getAfter(evPath).data.changeType == 'STATUS'
+            && changedKeys.hasOnly(['status', 'updatedAt', 'version'])
+          )
+        );
+    }
+
+    function isValidPostDeleteCoupling(postId, delVersion) {
+      let evPath = /databases/$(database)/documents/post_events/$(postId + '_v' + string(delVersion));
+      let tombPath = /databases/$(database)/documents/post_tombstones/$(postId);
+      return !exists(evPath)
+        && existsAfter(evPath)
+        && getAfter(evPath).data.postId == postId
+        && getAfter(evPath).data.authorId == request.auth.uid
+        && getAfter(evPath).data.postVersion == delVersion
+        && getAfter(evPath).data.changeType == 'DELETE'
+        && !exists(tombPath)
+        && existsAfter(tombPath)
+        && getAfter(tombPath).data.authorId == request.auth.uid
+        && getAfter(tombPath).data.deletedAt == request.time;
+    }
+
+    function isOwnedReservationData(postId, res) {
+      return res is map
+        && 'ownerUid' in res
+        && res.ownerUid is string
+        && res.ownerUid == request.auth.uid
+        && 'postId' in res
+        && res.postId is string
+        && res.postId == postId
+        && (!('createdAt' in res) || res.createdAt is timestamp);
+    }
+
+    function isPostReservationAvailable(postId) {
+      let resPath = /databases/$(database)/documents/post_reservations/$(postId);
+      return !exists(resPath)
+        || isOwnedReservationData(postId, get(resPath).data);
+    }
+
+    function isValidEventPostCoupling(ev) {
+      let postPath = /databases/$(database)/documents/posts/$(ev.postId);
+      let tombPath = /databases/$(database)/documents/post_tombstones/$(ev.postId);
+      return (
+        ev.changeType == 'CREATE'
+        && ev.postVersion == 1
+        && !exists(postPath)
+        && !exists(tombPath)
+        && isPostReservationAvailable(ev.postId)
+        && existsAfter(postPath)
+        && getAfter(postPath).data.authorId == request.auth.uid
+        && getAfter(postPath).data.version == 1
+        && getAfter(postPath).data.status == 'OPEN'
+        && getAfter(postPath).data.moderationStatus == 'VISIBLE'
+      ) || (
+        ev.changeType in ['UPDATE', 'STATUS']
+        && exists(postPath)
+        && get(postPath).data.authorId == request.auth.uid
+        && get(postPath).data.moderationStatus == 'VISIBLE'
+        && ev.postVersion == get(postPath).data.version + 1
+        && existsAfter(postPath)
+        && getAfter(postPath).data.authorId == request.auth.uid
+        && getAfter(postPath).data.version == ev.postVersion
+      ) || (
+        ev.changeType == 'DELETE'
+        && exists(postPath)
+        && get(postPath).data.authorId == request.auth.uid
+        && ev.postVersion == get(postPath).data.version + 1
+        && !existsAfter(postPath)
+        && !exists(tombPath)
+        && existsAfter(tombPath)
+        && getAfter(tombPath).data.authorId == request.auth.uid
+      );
+    }
+
+    function isValidTombstoneCreate(postId) {
+      let postPath = /databases/$(database)/documents/posts/$(postId);
+      return request.resource.data.keys().hasAll(['authorId', 'deletedAt'])
+        && request.resource.data.keys().hasOnly(['authorId', 'deletedAt'])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.deletedAt == request.time
+        && exists(postPath)
+        && !existsAfter(postPath)
+        && isValidTombstoneForPost(postId, get(postPath).data);
+    }
+
+    function isValidTombstoneForPost(postId, postBefore) {
+      return postBefore.authorId == request.auth.uid
+        && postBefore.version is int
+        && hasDeleteEventAfter(postId, postBefore.version + 1);
+    }
+
+    function hasDeleteEventAfter(postId, delVersion) {
+      let evPath = /databases/$(database)/documents/post_events/$(
+        postId + '_v' + string(delVersion)
+      );
+      return existsAfter(evPath)
+        && getAfter(evPath).data.changeType == 'DELETE';
+    }
+
+    // ─── posts ───────────────────────────────────────────────────────────────
 
     match /posts/{postId} {
-      allow read: if isVerifiedStudent();
+      // C4-R1 reviewed amendment: verified students may `get` absent post IDs
+      // (`resource == null`) so create preflight/transaction checks receive exists=false;
+      // existing record ACLs and list queries remain unchanged.
+      allow get: if isVerifiedStudent()
+        && resource == null;
+
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && (
+          resource.data.moderationStatus == 'VISIBLE'
+          || resource.data.authorId == request.auth.uid
+        );
+
       allow create: if isVerifiedStudent()
-        && request.resource.data.authorId == request.auth.uid;
+        && isAccountActive()
+        && postId.size() >= 1
+        && postId.size() <= 128
+        && !exists(/databases/$(database)/documents/post_tombstones/$(postId))
+        && isPostReservationAvailable(postId)
+        && hasValidPostShape(request.resource.data, postId, false)
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.moderationStatus == 'VISIBLE'
+        && request.resource.data.version == 1
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && isValidContactSnapshot(request.resource.data)
+        && isValidPostCreateEventCoupling(postId);
+
       allow update: if isVerifiedStudent()
+        && isAccountActive()
         && resource.data.authorId == request.auth.uid
-        && request.resource.data.authorId == resource.data.authorId;
-      allow delete: if isVerifiedStudent() && resource.data.authorId == request.auth.uid;
+        && resource.data.moderationStatus == 'VISIBLE'
+        && hasValidPostShape(request.resource.data, postId, true)
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.authorName == resource.data.authorName
+        && request.resource.data.contactEmail == resource.data.contactEmail
+        && request.resource.data.allowContact == resource.data.allowContact
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.moderationStatus == resource.data.moderationStatus
+        && (!('id' in resource.data) || ('id' in request.resource.data && request.resource.data.id == resource.data.id))
+        && request.resource.data.status in ['OPEN', 'RESOLVED', 'CLOSED']
+        && resource.data.version is int
+        && request.resource.data.version == resource.data.version + 1
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title', 'description', 'categoryId', 'category',
+          'areaChoice', 'areaId', 'areaOtherText', 'location', 'locationNote',
+          'occurredAt', 'timeMode', 'exactAtMillis', 'rangeStartMillis', 'rangeEndMillis', 'timeNote',
+          'mediaAssetIds', 'imageUrl', 'imageUrls', 'imagePublicId',
+          'status', 'updatedAt', 'version'
+        ])
+        && isValidPostUpdateEventCoupling(
+          postId,
+          request.resource.data.version,
+          request.resource.data.diff(resource.data).affectedKeys()
+        );
+
+      allow delete: if isVerifiedStudent()
+        && isAccountActive()
+        && resource.data.authorId == request.auth.uid
+        && resource.data.version is int
+        && resource.data.version >= 1
+        && isValidPostDeleteCoupling(postId, resource.data.version + 1);
     }
+
+    // ─── post_events ─────────────────────────────────────────────────────────
+
+    match /post_events/{eventId} {
+      allow read: if false;
+      allow update, delete: if false;
+
+      allow create: if isVerifiedStudent()
+        && isAccountActive()
+        && hasValidClientPostEventShape(request.resource.data, eventId)
+        && isValidEventPostCoupling(request.resource.data);
+    }
+
+    // ─── post_tombstones ─────────────────────────────────────────────────────
+
+    match /post_tombstones/{postId} {
+      // C4-R1 reviewed amendment: allow verified students to `get` absent tombstones
+      // (`resource == null`) during create transactions; existing foreign tombstones stay denied.
+      allow get: if isVerifiedStudent()
+        && resource == null;
+
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && resource.data.authorId == request.auth.uid;
+
+      allow update, delete: if false;
+
+      allow create: if isVerifiedStudent()
+        && isAccountActive()
+        && isValidTombstoneCreate(postId);
+    }
+
+    // ─── post_moderations (R1 author-safe moderation status/reason) ──────────
+
+    match /post_moderations/{postId} {
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && resource.data.authorId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // ─── admin_moderation_notes (R1 server/admin-only notes) ─────────────────
+
+    match /admin_moderation_notes/{postId} {
+      allow read, write: if false;
+    }
+
+    // ─── post_embeddings (R3 server-only vector index) ────────────────────────
+
+    match /post_embeddings/{postId} {
+      allow read, write: if false;
+    }
+
+    // ─── post_reservations (R4 server-managed draft ID lock) ──────────────────
+
+    match /post_reservations/{postId} {
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && resource.data.ownerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // ─── media_assets (R4 server-managed asset registry) ─────────────────────
+
+    match /media_assets/{assetId} {
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && resource.data.ownerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // ─── account_states & deletion_requests ──────────────────────────────────
+
+    match /account_states/{uid} {
+      allow read: if isVerifiedStudent() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+
+    match /deletion_requests/{uid} {
+      allow read: if isVerifiedStudent() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+
+    // ─── reports ─────────────────────────────────────────────────────────────
+
+    match /reports/{reportId} {
+      allow read: if isVerifiedStudent()
+        && resource != null
+        && resource.data.reporterUid == request.auth.uid;
+
+      allow create: if isVerifiedStudent()
+        && isAccountActive()
+        && !('publicNote' in request.resource.data)
+        && request.resource.data.keys().hasAll(['postId', 'reporterUid', 'reason', 'status', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['postId', 'reporterUid', 'reason', 'description', 'status', 'createdAt'])
+        && request.resource.data.postId is string
+        && request.resource.data.postId.size() >= 1
+        && request.resource.data.reporterUid == request.auth.uid
+        && reportId == request.resource.data.postId + '_' + request.auth.uid
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.reason in ['INAPPROPRIATE', 'WRONG_INFO', 'SPAM', 'OTHER']
+        && (!('description' in request.resource.data) || request.resource.data.description == null || (request.resource.data.description is string && request.resource.data.description.size() <= 500))
+        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
+        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.moderationStatus == 'VISIBLE'
+        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId != request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    // ─── users ────────────────────────────────────────────────────────────────
 
     match /users/{userId} {
-      allow read, create, update, delete: if isVerifiedStudent() && request.auth.uid == userId;
+      allow read: if isVerifiedStudent() && request.auth.uid == userId;
+      allow create, update, delete: if isVerifiedStudent()
+        && isAccountActive()
+        && request.auth.uid == userId;
     }
 
-    // Add narrowly scoped matches for new collections. Everything else is denied.
+    // ─── saved_posts (reserved for Task 9) ───────────────────────────────────
+
+    match /saved_posts/{userId}/items/{postId} {
+      allow read: if isVerifiedStudent() && request.auth.uid == userId;
+      allow create, update, delete: if isVerifiedStudent()
+        && isAccountActive()
+        && request.auth.uid == userId;
+    }
+
+    // ─── Catch-all deny ───────────────────────────────────────────────────────
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -190,7 +190,7 @@ fun HomeRoute(
                     selected == 4 && onSignOut != null -> {
                         savedScreens.SaveableStateProvider("profile") {
                             val profileViewModel =
-                                viewModel<ProfileViewModel>()
+                                viewModel<ProfileViewModel>(factory = ProfileViewModel.factory(context))
 
                             Column(Modifier.fillMaxSize()) {
                                 TextButton(

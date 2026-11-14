@@ -114,6 +114,8 @@ class MyPostsViewModelTest {
     fun markStatus_updatesPostStatusViaRepository() = runTest(dispatcher) {
         val fakeRepo = FakeMyPostsDataSource()
         val vm = MyPostsViewModel(repositoryProvider = { fakeRepo })
+        vm.bindUser("user123")
+        advanceUntilIdle()
         val post = createSamplePost("100", "Ví", "OPEN")
 
         vm.markStatus(post, "RESOLVED")
@@ -127,6 +129,8 @@ class MyPostsViewModelTest {
     fun deletePost_callsRepositoryDelete() = runTest(dispatcher) {
         val fakeRepo = FakeMyPostsDataSource()
         val vm = MyPostsViewModel(repositoryProvider = { fakeRepo })
+        vm.bindUser("user123")
+        advanceUntilIdle()
 
         vm.deletePost("200")
         advanceUntilIdle()

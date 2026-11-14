@@ -58,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -92,11 +93,12 @@ fun MyPostsScreen(
     onPostClick: (String) -> Unit,
     onCreatePostClick: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: MyPostsViewModel = viewModel(),
+    viewModel: MyPostsViewModel = viewModel(factory = MyPostsViewModel.factory(LocalContext.current)),
     onEditPostClick: ((HomePost) -> Unit)? = null,
     onPostChanged: ((postId: String, action: String) -> Unit)? = null
 ) {
-    val state by viewModel.state.collectAsState()
+    val observedState by viewModel.state.collectAsState()
+    val state = if (viewModel.isBoundTo(currentUserId)) observedState else MyPostsState()
     val context = LocalContext.current
     var postToDelete by remember {
         mutableStateOf<HomePost?>(null)
@@ -108,8 +110,9 @@ fun MyPostsScreen(
         mutableStateOf<HomePost?>(null)
     }
 
-    LaunchedEffect(currentUserId) {
+    DisposableEffect(currentUserId) {
         viewModel.bindUser(currentUserId)
+        onDispose { viewModel.bindUser(null) }
     }
 
     LaunchedEffect(state.userMessage) {
@@ -156,8 +159,9 @@ fun MyPostsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.markStatus(post, "CLOSED")
-                        onPostChanged?.invoke(post.id, "CLOSED")
+                        viewModel.markStatus(post, "CLOSED") {
+                            onPostChanged?.invoke(post.id, "CLOSED")
+                        }
                         postToClose = null
                     },
                     enabled = !state.actionLoading
@@ -226,8 +230,9 @@ fun MyPostsScreen(
                         viewModel.markStatus(
                             post,
                             "RESOLVED"
-                        )
-                        onPostChanged?.invoke(post.id, "RESOLVED")
+                        ) {
+                            onPostChanged?.invoke(post.id, "RESOLVED")
+                        }
                         postToResolve = null
                     },
                     enabled = !state.actionLoading
@@ -289,8 +294,9 @@ fun MyPostsScreen(
                         postToDelete = null
 
                         p?.let {
-                            viewModel.deletePost(it.id)
-                            onPostChanged?.invoke(it.id, "DELETED")
+                            viewModel.deletePost(it.id) {
+                                onPostChanged?.invoke(it.id, "DELETED")
+                            }
                         }
                     }
                 ) {
@@ -468,7 +474,7 @@ fun MyPostsScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.error
                                 )
-                                OutlinedButton(onClick = { viewModel.bindUser(currentUserId) }) {
+                                OutlinedButton(onClick = { viewModel.retry() }) {
                                     Text("Thử lại")
                                 }
                             }
@@ -496,7 +502,7 @@ fun MyPostsScreen(
                                 MyPostCard(
                                     post = post,
                                     onClick = { onPostClick(post.id) },
-                                    onEditClick = { onEditPostClick?.invoke(post) },
+                                    onEditClick = { if (!post.isHidden) onEditPostClick?.invoke(post) },
 
                                     onToggleStatus = {
                                         if (!state.actionLoading) {
@@ -505,8 +511,9 @@ fun MyPostsScreen(
                                                         post.status.equals("CLOSED", ignoreCase = true)
 
                                             if (isResolved) {
-                                                viewModel.markStatus(post, "ACTIVE")
-                                                onPostChanged?.invoke(post.id, "ACTIVE")
+                                                viewModel.markStatus(post, "OPEN") {
+                                                    onPostChanged?.invoke(post.id, "OPEN")
+                                                }
                                             } else {
                                                 postToResolve = post
                                             }

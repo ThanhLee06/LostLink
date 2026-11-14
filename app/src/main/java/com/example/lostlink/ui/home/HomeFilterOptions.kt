@@ -35,7 +35,7 @@ enum class HomeArea(val id: String, val label: String, val campus: Boolean = fal
     CANTEEN("canteen", "Căn tin", false, "căng tin"),
     LIBRARY("library", "Thư viện"),
     PARKING("parking", "Bãi giữ xe", false, "bãi xe"),
-    AUDITORIUM("Auditorium", "Hội trường");
+    AUDITORIUM("auditorium", "Hội trường", false, "Auditorium");
 
     private val keys = (listOf(id, label) + aliases).map(::filterKey).toSet()
     private val phrases = (listOf(label) + aliases.filter { filterKey(it).length > 1 }).map(::filterKey)

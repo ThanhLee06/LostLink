@@ -79,78 +79,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.example.lostlink.data.CloudinaryRepository
 import com.example.lostlink.ui.home.HomePost
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.lostlink.data.PostRepository
+import com.example.lostlink.data.FirebaseAccountRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-// Kiểm tra tính hợp lệ dữ liệu chỉnh sửa
-// =========================================================================
-// PHẦN 1: HÀM KIỂM TRA HỢP LỆ (VALIDATE DỮ LIỆU)
-// =========================================================================
-
-/**
- * Kiểm tra dữ liệu bắt buộc trước khi lưu cập nhật.
- * - Tiêu đề không được để trống.
- * - Danh mục không được để trống.
- * Trả về thông báo lỗi nếu có, hoặc null nếu hợp lệ.
- */
-fun validateEditPostData(title: String, categoryId: String): String? {
-    if (title.trim().isEmpty()) {
-        return "Tiêu đề món đồ không được để trống."
-    }
-    if (categoryId.trim().isEmpty()) {
-        return "Vui lòng chọn danh mục cho món đồ."
-    }
-    return null
-}
-
-// Cập nhật tài liệu bài viết trên Firestore
-// =========================================================================
-// PHẦN 2: HÀM CẬP NHẬT DỮ LIỆU VÀO FIRESTORE
-// =========================================================================
-
-/**
- * Cập nhật tài liệu posts/{postId} trên Firebase Firestore.
- * - Bổ sung trường `updatedAt` lưu thời gian chỉnh sửa mới nhất.
- * - Đảm bảo chỉ chính tác giả bài viết mới có quyền cập nhật (theo Firestore Security Rules).
- */
-suspend fun updatePostToFirestore(
-    postId: String,
-    title: String,
-    type: String,
-    categoryId: String,
-    categoryName: String,
-    location: String,
-    description: String,
-    imageUrl: String?
-): Result<Unit> {
-    return runCatching {
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
-            ?: throw IllegalStateException("Bạn chưa đăng nhập.")
-
-        val postRef = FirebaseFirestore.getInstance().collection("posts").document(postId)
-
-        val updateMap = hashMapOf<String, Any?>(
-            "title" to title.trim(),
-            "type" to type,
-            "categoryId" to categoryId,
-            "category" to categoryName,
-            "location" to location.trim(),
-            "description" to description.trim(),
-            "imageUrl" to imageUrl,
-            "imageUrls" to (if (!imageUrl.isNullOrBlank()) listOf(imageUrl) else emptyList<String>()),
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
-
-        postRef.update(updateMap).await()
-    }
-}
-
- //Điền sẵn toàn bộ dữ liệu hiện tại của bài viết 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditPostScreen(
@@ -161,11 +96,15 @@ fun EditPostScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repository = remember(context) { PostRepository(context.applicationContext) }
+    val accounts = remember { FirebaseAccountRepository() }
+    val ownerUid = post.authorId
+    fun isCurrentOwner() = accounts.isUserLoggedInAndVerified && accounts.currentUserId == ownerUid
 
     // Điền sẵn dữ liệu cũ từ bài viết
     var title by remember { mutableStateOf(post.title) }
     var type by remember { mutableStateOf(post.type) } 
-    var categoryId by remember { mutableStateOf(post.categoryId.ifBlank { "other" }) }
+    var categoryId by remember { mutableStateOf(PostCategories.normalizeId(post.categoryId) ?: "other") }
     var location by remember { mutableStateOf(post.location) }
     var description by remember { mutableStateOf(post.description) }
 
@@ -208,16 +147,7 @@ fun EditPostScreen(
         }
     }
 
-    val categories = remember {
-        listOf(
-            "wallet" to "Ví",
-            "bag" to "Túi, balo",
-            "keys" to "Chìa khóa",
-            "phone" to "Điện thoại",
-            "documents" to "Giấy tờ, thẻ",
-            "other" to "Khác"
-        )
-    }
+    val categories = remember { PostCategories.all.map { it.id to it.label } }
 
     val selectedCategoryLabel = categories.firstOrNull { it.first == categoryId }?.second ?: "Khác"
 
@@ -290,7 +220,7 @@ fun EditPostScreen(
                                 title = "Mất đồ",
                                 icon = Icons.Rounded.SearchOff,
                                 isSelected = isLost,
-                                onClick = { type = "LOST" },
+                                onClick = {}, enabled = false,
                                 modifier = Modifier.weight(1f)
                             )
 
@@ -298,7 +228,7 @@ fun EditPostScreen(
                                 title = "Nhặt được",
                                 icon = Icons.Rounded.Inventory2,
                                 isSelected = !isLost,
-                                onClick = { type = "FOUND" },
+                                onClick = {}, enabled = false,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -507,52 +437,41 @@ fun EditPostScreen(
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
                         onClick = {
-                            val errorMsg = validateEditPostData(title, categoryId)
-                            if (errorMsg != null) {
-                                Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                            if (isSaving || !isCurrentOwner()) return@Button
+                            if (post.isHidden) {
+                                Toast.makeText(context, "Bài đang bị ẩn, không thể chỉnh sửa.", Toast.LENGTH_LONG).show()
                                 return@Button
                             }
-
+                            val draft = editPostDraft(post, title, categoryId, location, description)
+                            val errors = PostFormValidator.validate(draft)
+                            val errorMsg = listOfNotNull(errors.title, errors.category, errors.description,
+                                errors.area, errors.time, errors.image).firstOrNull()
+                            if (errorMsg != null) {
+                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
+                            if (selectedImageUri == null && !isImageDeleted && originalImageUrl != null && post.mediaAssetIds.isEmpty()) {
+                                Toast.makeText(context, "Ảnh cũ chưa được xác minh. Hãy chọn lại ảnh hoặc gỡ ảnh.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             isSaving = true
                             coroutineScope.launch {
-                                var finalImageUrl: String? = when {
-                                    isImageDeleted -> null
-                                    selectedImageUri != null -> null // Cần tải lên Cloudinary
-                                    else -> currentImageUrl
-                                }
-
-                                // Nếu người dùng chọn ảnh mới -> tải lên Cloudinary
-                                if (selectedImageUri != null) {
-                                    savingStatus = "Đang tải ảnh lên..."
-                                    val uploadResult = CloudinaryRepository().uploadImage(context, selectedImageUri)
-                                    if (uploadResult.isFailure) {
-                                        isSaving = false
-                                        val err = uploadResult.exceptionOrNull()?.localizedMessage ?: "Tải ảnh thất bại."
-                                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-                                        return@launch
+                                try {
+                                    val media = selectedImageUri?.let {
+                                        savingStatus = "Đang tải ảnh lên..."
+                                        repository.uploadImage(ownerUid, post.id, it)
                                     }
-                                    finalImageUrl = uploadResult.getOrNull()
-                                }
-
-                                savingStatus = "Đang lưu bài đăng..."
-                                val result = updatePostToFirestore(
-                                    postId = post.id,
-                                    title = title,
-                                    type = type,
-                                    categoryId = categoryId,
-                                    categoryName = selectedCategoryLabel,
-                                    location = location,
-                                    description = description,
-                                    imageUrl = finalImageUrl
-                                )
-
-                                isSaving = false
-                                if (result.isSuccess) {
-                                    Toast.makeText(context, "Đã cập nhật bài đăng thành công!", Toast.LENGTH_SHORT).show()
-                                    onSaveSuccess()
-                                } else {
-                                    val err = result.exceptionOrNull()?.localizedMessage ?: "Cập nhật thất bại."
-                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                                    if (!isCurrentOwner()) return@launch
+                                    savingStatus = "Đang lưu bài đăng..."
+                                    repository.updatePost(ownerUid, post.id, draft, media,
+                                        keepExistingMedia = selectedImageUri == null && !isImageDeleted)
+                                    if (isCurrentOwner()) onSaveSuccess()
+                                } catch (error: Exception) {
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                    if (isCurrentOwner()) Toast.makeText(context,
+                                        error.localizedMessage ?: "Cập nhật thất bại.", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isSaving = false
                                 }
                             }
                         },
@@ -618,10 +537,12 @@ private fun SelectableTypeButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(12.dp),
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(

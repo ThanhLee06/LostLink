@@ -2,26 +2,30 @@ package com.example.lostlink.ui.detail
 
 import com.example.lostlink.data.FirebaseAccountRepository
 import com.example.lostlink.ui.home.HomePost
+import com.example.lostlink.ui.post.PostCategories
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Source
 import java.util.Locale
 
-data class PostDetail(val post: HomePost, val category: String = "") {
+/** Detail-only projection; moderationReason is sourced strictly from post_moderations/{postId} for the owner. */
+data class PostDetail(
+    val post: HomePost,
+    val category: String = "",
+    val moderationReason: String? = null,
+) {
     companion object {
         fun fromDocument(id: String, fields: Map<String, Any?>): PostDetail {
             fun text(key: String) = (fields[key] as? String)?.trim().orEmpty()
             val post = HomePost.fromDocument(id, fields + ("type" to text("type").uppercase(Locale.ROOT)))
-            val category = text("category").let { value ->
-                if (value.isNotBlank()) categories[value] ?: value else categories[text("categoryId")].orEmpty()
-            }
-            return PostDetail(post, category)
+            val rawCatId = text("categoryId")
+            val rawCatLabel = text("category")
+            val category = PostCategories.findByIdOrAlias(rawCatId)?.label
+                ?: PostCategories.findByIdOrAlias(rawCatLabel)?.label
+                ?: rawCatLabel
+            return PostDetail(post = post, category = category, moderationReason = null)
         }
-
-
-        private val categories = mapOf("wallet" to "Ví", "bag" to "Túi, balo", "keys" to "Chìa khóa",
-            "phone" to "Điện thoại", "documents" to "Giấy tờ, thẻ", "other" to "Khác")
     }
 }
 
@@ -62,7 +66,8 @@ class FirebasePostDetailSource : PostDetailSource {
     }
 
     override fun read(id: String, onComplete: (Result<PostDetail?>) -> Unit) {
-        if (activeUserId == null) {
+        val callerUid = activeUserId
+        if (callerUid == null) {
             onComplete(Result.failure(PostReadException(PostReadFailure.ACCESS_DENIED)))
             return
         }
@@ -79,10 +84,32 @@ class FirebasePostDetailSource : PostDetailSource {
                 onComplete(Result.failure(PostReadException(failure, task.exception)))
             } else {
                 val document = task.result
-                onComplete(if (!document.exists()) Result.success(null) else runCatching {
-                    try { PostDetail.fromDocument(document.id, document.data.orEmpty()) }
-                    catch (error: Exception) { throw PostReadException(PostReadFailure.INVALID_DATA, error) }
-                })
+                if (!document.exists()) {
+                    onComplete(Result.success(null))
+                    return@addOnCompleteListener
+                }
+                val parsed = runCatching {
+                    try {
+                        PostDetail.fromDocument(document.id, document.data.orEmpty())
+                    } catch (error: Exception) {
+                        throw PostReadException(PostReadFailure.INVALID_DATA, error)
+                    }
+                }
+                val baseDetail = parsed.getOrNull()
+                if (baseDetail != null && baseDetail.post.isHidden && baseDetail.post.authorId == callerUid) {
+                    // Author reads moderation reason strictly from post_moderations/{postId}
+                    firestore.collection("post_moderations").document(id).get(Source.SERVER)
+                        .addOnCompleteListener { modTask ->
+                            val reason = if (modTask.isSuccessful && modTask.result.exists()) {
+                                modTask.result.getString("reason")?.trim()?.takeIf { it.isNotEmpty() }
+                            } else {
+                                null
+                            }
+                            onComplete(Result.success(baseDetail.copy(moderationReason = reason)))
+                        }
+                } else {
+                    onComplete(parsed)
+                }
             }
         }
     }
