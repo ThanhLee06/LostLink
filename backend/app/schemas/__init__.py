@@ -4,9 +4,13 @@ app/schemas/__init__.py — Re-export canonical B0 schema models, legacy project
 from __future__ import annotations
 
 from app.schemas.account import (
+    AccountDeletionInitRequest,
+    AccountDeletionInitResponse,
     AccountStateResponse,
     AccountStateStatus,
     DeletionRequestResponse,
+    DeletionRequestStatus,
+    DeletionStepStatus,
 )
 from app.schemas.common import (
     CamelModel,
@@ -64,6 +68,8 @@ from app.schemas.taxonomy import (
 __all__ = [
     "AREA_LABELS",
     "AREA_LEGACY_ALIASES",
+    "AccountDeletionInitRequest",
+    "AccountDeletionInitResponse",
     "AccountStateResponse",
     "AccountStateStatus",
     "AdminModerationNote",
@@ -73,6 +79,8 @@ __all__ = [
     "CamelModel",
     "CompleteUploadResponse",
     "DeletionRequestResponse",
+    "DeletionRequestStatus",
+    "DeletionStepStatus",
     "ErrorResponse",
     "EventChangeType",
     "HealthResponse",

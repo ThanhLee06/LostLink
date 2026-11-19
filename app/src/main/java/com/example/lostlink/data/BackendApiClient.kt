@@ -32,6 +32,14 @@ data class WakeResult(
     val message: String,
 )
 
+data class AccountDeletionResult(
+    val uid: String,
+    val accountStatus: String,
+    val requestId: String,
+    val deletionStatus: String,
+    val created: Boolean,
+)
+
 class BackendApiException(
     val statusCode: Int,
     val code: String?,
@@ -77,6 +85,21 @@ class BackendApiClient(
             error("Kết nối backend yêu cầu HTTPS.")
         }
         return baseUrl
+    }
+
+    private fun getCandidateBaseUrls(): List<String> {
+        val configured = requireConfiguredUrl()
+        if (!allowCleartext) return listOf(configured)
+        val list = mutableListOf(configured)
+        if (configured.contains("10.0.2.2")) {
+            list.add(configured.replace("10.0.2.2", "127.0.0.1"))
+            list.add(configured.replace("10.0.2.2", "localhost"))
+            list.add(configured.replace("10.0.2.2", "192.168.1.6"))
+        } else if (configured.contains("127.0.0.1") || configured.contains("localhost")) {
+            list.add(configured.replace("127.0.0.1", "10.0.2.2").replace("localhost", "10.0.2.2"))
+            list.add(configured.replace("127.0.0.1", "192.168.1.6").replace("localhost", "192.168.1.6"))
+        }
+        return list.distinct()
     }
 
     /** POST /api/v1/media/uploads — reserve postId and obtain Cloudinary signed params. */
@@ -188,6 +211,55 @@ class BackendApiClient(
             }
         }
     }
+
+    /** POST /api/v1/account/deletion — initiate account deletion, lock DELETING, revoke sessions. */
+    suspend fun requestAccountDeletion(confirm: Boolean = true, reason: String? = null): Result<AccountDeletionResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val candidateRoots = getCandidateBaseUrls()
+                val token = tokenProvider()
+                val bodyMap = linkedMapOf<String, Any?>("confirm" to confirm)
+                if (!reason.isNullOrBlank()) {
+                    bodyMap["reason"] = reason.trim()
+                }
+                val payload = SimpleJson.encodeObject(bodyMap)
+
+                var lastException: Exception? = null
+                var parsedResult: AccountDeletionResult? = null
+
+                for (root in candidateRoots) {
+                    try {
+                        val request = Request.Builder()
+                            .url("$root/api/v1/account/deletion")
+                            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+                            .addHeader("Authorization", "Bearer $token")
+                            .build()
+
+                        client.newCall(request).execute().use { response ->
+                            val body = response.body?.string().orEmpty()
+                            if (!response.isSuccessful) {
+                                throw parseApiError(response.code, body, response.header("X-Trace-Id"))
+                            }
+                            val json = SimpleJson.parseObject(body)
+                            parsedResult = AccountDeletionResult(
+                                uid = SimpleJson.stringValue(json, "uid"),
+                                accountStatus = SimpleJson.stringValue(json, "accountStatus"),
+                                requestId = SimpleJson.stringValue(json, "requestId"),
+                                deletionStatus = SimpleJson.stringValue(json, "deletionStatus"),
+                                created = SimpleJson.booleanValue(json, "created", false),
+                            )
+                        }
+                        break
+                    } catch (e: BackendApiException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lastException = e
+                    }
+                }
+
+                parsedResult ?: throw (lastException ?: IOException("Không thể kết nối đến máy chủ backend."))
+            }
+        }
 
     internal fun parseApiError(statusCode: Int, responseBody: String, headerTraceId: String?): BackendApiException {
         val json = SimpleJson.parseObjectOrNull(responseBody)

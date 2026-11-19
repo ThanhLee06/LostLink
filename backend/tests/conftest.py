@@ -528,12 +528,14 @@ def _clean_runtime_singletons() -> Iterator[None]:
 
 
 @pytest.fixture
-def fake_db() -> FakeFirestoreClient:
+def fake_db(monkeypatch: pytest.MonkeyPatch) -> FakeFirestoreClient:
     """Return an isolated FakeFirestoreClient wired into firebase.get_firestore()."""
+    from app.core import firebase as fb_mod
     from app.core.firebase import set_firestore_for_tests
 
     db = FakeFirestoreClient()
     set_firestore_for_tests(db)  # type: ignore[arg-type]
+    monkeypatch.setattr(fb_mod, "init_firebase", lambda: None)
     return db
 
 
