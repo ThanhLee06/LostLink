@@ -67,6 +67,19 @@ class Settings(BaseSettings):
     media_signed_upload_window_seconds: int = Field(default=3600, ge=60)
     run_boot_recovery: bool = True
 
+    @field_validator("google_application_credentials", mode="after")
+    @classmethod
+    def _resolve_credentials_path(cls, v: str) -> str:
+        if not v:
+            return v
+        cleaned = v.strip()
+        p = Path(cleaned)
+        if not p.is_absolute():
+            candidate = _BACKEND_DIR / p
+            if candidate.exists():
+                return str(candidate.resolve())
+        return cleaned
+
     @field_validator("app_env", "cloudinary_signature_algorithm", mode="before")
     @classmethod
     def _normalize_lower(cls, value: object) -> object:

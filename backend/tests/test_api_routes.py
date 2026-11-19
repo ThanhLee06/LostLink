@@ -228,7 +228,6 @@ def test_b0_t07_deleting_account_allowed_on_account_routes_blocked_on_active_rou
         ("PATCH", "/api/v1/admin/posts/p1/moderate"),
         ("GET", "/api/v1/admin/reports"),
         ("POST", "/api/v1/search/smoke"),
-        ("POST", "/api/v1/account/deletion/resume"),
     ],
 )
 def test_unmounted_future_routes_return_404_in_b0_main(

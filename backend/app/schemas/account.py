@@ -1,7 +1,7 @@
 """
 app/schemas/account.py — Account state and deletion request schemas.
 
-Matches docs/Contract-B0-Schema.md §3.7 and §4.2.
+Matches docs/Contract-B0-Schema.md §3.7 and §4.2, extended for ST35–ST37.
 """
 from __future__ import annotations
 
@@ -20,6 +20,13 @@ class AccountStateStatus(str, Enum):
     DELETED = "DELETED"
 
 
+class DeletionStatus(str, Enum):
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class AccountStateResponse(StrictCamelModel):
     uid: str = Field(..., min_length=1)
     status: AccountStateStatus
@@ -30,5 +37,6 @@ class DeletionRequestResponse(StrictCamelModel):
     uid: str = Field(..., min_length=1)
     status: str = Field(..., min_length=1)
     steps: Dict[str, Any] = Field(default_factory=dict)
+    last_error: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
