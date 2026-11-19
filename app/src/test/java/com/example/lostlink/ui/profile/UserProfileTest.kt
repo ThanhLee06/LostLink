@@ -2,6 +2,7 @@ package com.example.lostlink.ui.profile
 
 import com.example.lostlink.ui.home.HomePost
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -84,5 +85,29 @@ class UserProfileTest {
     fun allowEmailContact_defaultsToTrue() {
         val defaultProfile = UserProfile()
         assertTrue("Mặc định cho phép xem email liên hệ phải là true", defaultProfile.allowEmailContact)
+    }
+
+    @Test
+    fun deletionConfirmationAndUiStateFlagsWorkCorrectly() {
+        assertTrue(UserProfile.isValidDeletionConfirmation("XOA"))
+        assertTrue(UserProfile.isValidDeletionConfirmation("  xoa "))
+        assertFalse(UserProfile.isValidDeletionConfirmation(""))
+        assertFalse(UserProfile.isValidDeletionConfirmation("DELETE"))
+
+        val pending = AccountDeletionUiState(status = "PENDING")
+        assertTrue(pending.isVisible)
+        assertTrue(pending.isInProgress)
+        assertFalse(pending.isFailed)
+        assertFalse(pending.isCompleted)
+
+        val failed = AccountDeletionUiState(status = "FAILED", error = "Cloudinary timeout")
+        assertTrue(failed.isVisible)
+        assertTrue(failed.isFailed)
+        assertFalse(failed.isInProgress)
+
+        val completed = AccountDeletionUiState(status = "COMPLETED")
+        assertTrue(completed.isCompleted)
+        assertFalse(completed.isInProgress)
+        assertFalse(completed.isFailed)
     }
 }

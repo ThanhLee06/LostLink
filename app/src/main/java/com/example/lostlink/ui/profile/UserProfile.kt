@@ -1,5 +1,6 @@
 package com.example.lostlink.ui.profile
 
+import com.example.lostlink.data.DeletionStepSummary
 import com.example.lostlink.ui.home.HomePost
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -46,11 +47,36 @@ data class UserProfile(
                 else -> null
             }
         }
+
+        fun isValidDeletionConfirmation(input: String): Boolean =
+            input.trim().equals("XOA", ignoreCase = true)
     }
 }
 
 enum class ProfilePostTab {
     OPEN, COMPLETED
+}
+
+data class AccountDeletionUiState(
+    val isSubmitting: Boolean = false,
+    val isPolling: Boolean = false,
+    val status: String? = null,
+    val steps: DeletionStepSummary = DeletionStepSummary(),
+    val error: String? = null,
+    val sessionRevokedConfirmed: Boolean = false,
+    val requiresReauth: Boolean = false,
+) {
+    val isVisible: Boolean
+        get() = isSubmitting || status != null || error != null
+
+    val isInProgress: Boolean
+        get() = isSubmitting || status == "PENDING" || status == "IN_PROGRESS"
+
+    val isCompleted: Boolean
+        get() = status == "COMPLETED"
+
+    val isFailed: Boolean
+        get() = status == "FAILED" || (!isInProgress && !isCompleted && error != null)
 }
 
 data class ProfileState(
@@ -63,6 +89,7 @@ data class ProfileState(
     val isSavingName: Boolean = false,
     val emailContactLoaded: Boolean = false,
     val isSavingEmailContact: Boolean = false,
+    val deletion: AccountDeletionUiState = AccountDeletionUiState(),
 ) {
     val openPostsCount get() = userPosts.count { !it.isCompleted }
     val completedPostsCount get() = userPosts.count { it.isCompleted }

@@ -32,6 +32,25 @@ data class WakeResult(
     val message: String,
 )
 
+data class DeletionStepSummary(
+    val sessionRevoked: String = "PENDING",
+    val firestorePostsStatus: String = "PENDING",
+    val firestorePostsDeleted: Int = 0,
+    val mediaAssetsStatus: String = "PENDING",
+    val mediaAssetsDeleted: Int = 0,
+    val mediaAssetsFailed: Int = 0,
+    val legacyAuditCount: Int = 0,
+    val firestoreUserDataStatus: String = "PENDING",
+    val firebaseAuthStatus: String = "PENDING",
+)
+
+data class AccountDeletionStatus(
+    val uid: String,
+    val status: String,
+    val steps: DeletionStepSummary = DeletionStepSummary(),
+    val lastError: String? = null,
+)
+
 class BackendApiException(
     val statusCode: Int,
     val code: String?,
@@ -189,6 +208,56 @@ class BackendApiClient(
         }
     }
 
+    /** POST /api/v1/account/deletion — initiate account deletion & lock DELETING (ST35/ST38). */
+    suspend fun requestAccountDeletion(): Result<AccountDeletionStatus> =
+        executeAccountDeletionCall("POST", "/api/v1/account/deletion")
+
+    /** GET /api/v1/account/deletion — poll current account deletion progress (ST38). */
+    suspend fun getAccountDeletionStatus(): Result<AccountDeletionStatus> =
+        executeAccountDeletionCall("GET", "/api/v1/account/deletion")
+
+    /** POST /api/v1/account/deletion/resume — retry failed/stalled account deletion (ST35/ST38). */
+    suspend fun resumeAccountDeletion(): Result<AccountDeletionStatus> =
+        executeAccountDeletionCall("POST", "/api/v1/account/deletion/resume")
+
+    private suspend fun executeAccountDeletionCall(
+        method: String,
+        path: String,
+    ): Result<AccountDeletionStatus> = withContext(Dispatchers.IO) {
+        runCatching {
+            val root = requireConfiguredUrl()
+            val token = tokenProvider()
+            val builder = Request.Builder()
+                .url("$root$path")
+                .addHeader("Authorization", "Bearer $token")
+            if (method == "POST") {
+                builder.post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            } else {
+                builder.get()
+            }
+            wakeClient.newCall(builder.build()).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw parseApiError(response.code, body, response.header("X-Trace-Id"))
+                }
+                parseAccountDeletionStatus(SimpleJson.parseObject(body))
+            }
+        }
+    }
+
+    internal fun parseAccountDeletionStatus(json: Map<String, Any?>): AccountDeletionStatus {
+        val uid = SimpleJson.stringValue(json, "uid").trim()
+        val status = SimpleJson.stringValue(json, "status", "PENDING").trim().ifEmpty { "PENDING" }
+        val lastError = SimpleJson.stringValue(json, "lastError").trim().takeIf { it.isNotEmpty() }
+        val stepsObj = SimpleJson.objectValue(json, "steps").orEmpty()
+        return AccountDeletionStatus(
+            uid = uid,
+            status = status,
+            steps = parseDeletionStepSummary(stepsObj),
+            lastError = lastError,
+        )
+    }
+
     internal fun parseApiError(statusCode: Int, responseBody: String, headerTraceId: String?): BackendApiException {
         val json = SimpleJson.parseObjectOrNull(responseBody)
         val rawDetail = SimpleJson.stringValue(json, "detail").trim()
@@ -207,6 +276,47 @@ class BackendApiClient(
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+        fun parseDeletionStepSummary(stepsObj: Map<String, Any?>): DeletionStepSummary {
+            val postsObj = SimpleJson.objectValue(stepsObj, "firestorePosts")
+            val mediaObj = SimpleJson.objectValue(stepsObj, "mediaAssets")
+            val legacyObj = SimpleJson.objectValue(stepsObj, "legacyMediaAudit")
+            val userDataObj = SimpleJson.objectValue(stepsObj, "firestoreUserData")
+            val authObj = SimpleJson.objectValue(stepsObj, "firebaseAuth")
+
+            val sessionRevoked = SimpleJson.stringValue(stepsObj, "sessionRevoked", "PENDING")
+                .trim().ifEmpty { "PENDING" }
+            val postsStatus = if (postsObj != null) {
+                SimpleJson.stringValue(postsObj, "status", "PENDING")
+            } else {
+                SimpleJson.stringValue(stepsObj, "posts", "PENDING")
+            }.trim().ifEmpty { "PENDING" }
+
+            val userDataStatus = if (userDataObj != null) {
+                SimpleJson.stringValue(userDataObj, "status", "PENDING")
+            } else {
+                SimpleJson.stringValue(stepsObj, "firestoreUserData", "PENDING")
+            }.trim().ifEmpty { "PENDING" }
+
+            val authStatus = if (authObj != null) {
+                SimpleJson.stringValue(authObj, "status", "PENDING")
+            } else {
+                SimpleJson.stringValue(stepsObj, "firebaseAuth", "PENDING")
+            }.trim().ifEmpty { "PENDING" }
+
+            return DeletionStepSummary(
+                sessionRevoked = sessionRevoked,
+                firestorePostsStatus = postsStatus,
+                firestorePostsDeleted = SimpleJson.intValue(postsObj, "deleted", 0),
+                mediaAssetsStatus = SimpleJson.stringValue(mediaObj, "status", "PENDING")
+                    .trim().ifEmpty { "PENDING" },
+                mediaAssetsDeleted = SimpleJson.intValue(mediaObj, "deleted", 0),
+                mediaAssetsFailed = SimpleJson.intValue(mediaObj, "failed", 0),
+                legacyAuditCount = SimpleJson.intValue(legacyObj, "count", 0),
+                firestoreUserDataStatus = userDataStatus,
+                firebaseAuthStatus = authStatus,
+            )
+        }
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

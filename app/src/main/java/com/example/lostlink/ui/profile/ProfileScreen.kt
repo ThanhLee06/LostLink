@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.lostlink.ui.home.FeedNotice
@@ -49,6 +50,7 @@ fun ProfileScreen(
     var showPersonalInfoDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showSignOutConfirmDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
     var postToDelete by remember { mutableStateOf<HomePost?>(null) }
     var postToResolve by remember { mutableStateOf<HomePost?>(null) }
@@ -85,6 +87,18 @@ fun ProfileScreen(
                     completedPosts = state.completedPostsCount,
                     onEditName = { showEditNameDialog = true }
                 )
+            }
+
+            // Account Deletion Progress / Error Card (ST38)
+            if (state.deletion.isVisible) {
+                item(key = "account_deletion_progress") {
+                    AccountDeletionProgressCard(
+                        deletion = state.deletion,
+                        onRetry = { viewModel.resumeAccountDeletion(onCompletedSignOut = onSignOut) },
+                        onRefresh = { viewModel.refreshDeletionStatus(onSignOut) },
+                        onSignOutNow = onSignOut,
+                    )
+                }
             }
 
             // Section: Tin của tôi (My Posts)
@@ -270,6 +284,36 @@ fun ProfileScreen(
                 }
             }
 
+            // Delete Account Action (ST38)
+            item(key = "delete_account_button") {
+                Surface(
+                    onClick = { if (!state.deletion.isInProgress) showDeleteAccountDialog = true },
+                    color = colors.errorContainer.copy(alpha = 0.22f),
+                    shape = HomeTokens.CardShape,
+                    border = BorderStroke(1.dp, colors.error.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (state.deletion.isInProgress) "Đang xóa tài khoản..." else "Xóa tài khoản vĩnh viễn",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.error
+                        )
+                        Text(
+                            text = "Thu hồi phiên đăng nhập, xóa toàn bộ bài đăng, ảnh đã tải lên và hồ sơ LostLink.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             item(key = "bottom_space") {
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -432,6 +476,302 @@ fun ProfileScreen(
             }
         )
     }
+
+    if (showDeleteAccountDialog || state.deletion.isVisible) {
+        DeleteAccountConfirmDialog(
+            email = state.profile.email,
+            deletion = state.deletion,
+            onDismiss = {
+                if (!state.deletion.isInProgress) {
+                    showDeleteAccountDialog = false
+                }
+            },
+            onConfirm = {
+                viewModel.requestAccountDeletion(onCompletedSignOut = {
+                    showDeleteAccountDialog = false
+                    Toast.makeText(context, "Tài khoản và toàn bộ dữ liệu đã được xóa vĩnh viễn.", Toast.LENGTH_LONG).show()
+                    onSignOut()
+                })
+            },
+            onRetry = { password ->
+                viewModel.resumeAccountDeletion(
+                    reauthPassword = password,
+                    onCompletedSignOut = {
+                        showDeleteAccountDialog = false
+                        Toast.makeText(context, "Tài khoản và toàn bộ dữ liệu đã được xóa vĩnh viễn.", Toast.LENGTH_LONG).show()
+                        onSignOut()
+                    },
+                )
+            },
+            onRefresh = { viewModel.refreshDeletionStatus(onSignOut) },
+            onSignOutNow = {
+                showDeleteAccountDialog = false
+                onSignOut()
+            },
+        )
+    }
+}
+
+@Composable
+private fun AccountDeletionProgressCard(
+    deletion: AccountDeletionUiState,
+    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
+    onSignOutNow: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val steps = deletion.steps
+    val headerTitle = when {
+        deletion.isCompleted -> "Đã xóa tài khoản hoàn tất"
+        deletion.isFailed -> "Tiến trình xóa tài khoản gặp lỗi"
+        else -> "Đang tiến hành xóa tài khoản"
+    }
+
+    Surface(
+        color = if (deletion.isFailed) colors.errorContainer.copy(alpha = 0.25f) else colors.surface,
+        shape = HomeTokens.CardShape,
+        border = BorderStroke(1.dp, if (deletion.isFailed) colors.error else colors.outlineVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (deletion.isInProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+                Text(
+                    text = headerTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (deletion.isFailed) colors.error else colors.onSurface
+                )
+            }
+
+            DeletionStepRow("1. Khóa tài khoản & thu hồi phiên", steps.sessionRevoked)
+            DeletionStepRow(
+                "2. Thu dọn bài đăng (${steps.firestorePostsDeleted} bài)",
+                steps.firestorePostsStatus
+            )
+            DeletionStepRow(
+                "3. Thu dọn ảnh Cloudinary (${steps.mediaAssetsDeleted} ảnh" +
+                    if (steps.legacyAuditCount > 0) ", đối soát ${steps.legacyAuditCount} ảnh cũ)" else ")",
+                steps.mediaAssetsStatus
+            )
+            DeletionStepRow("4. Thu dọn hồ sơ & dữ liệu lưu", steps.firestoreUserDataStatus)
+            DeletionStepRow("5. Xóa tài khoản xác thực", steps.firebaseAuthStatus)
+
+            if (!deletion.error.isNullOrBlank()) {
+                Text(
+                    text = "Chi tiết lỗi: ${deletion.error}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.error
+                )
+            }
+
+            if (deletion.sessionRevokedConfirmed && !deletion.isCompleted) {
+                Text(
+                    text = "Phiên đăng nhập đã được thu hồi. Hệ thống đang tiếp tục dọn dữ liệu dưới nền.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            ) {
+                if (deletion.isFailed) {
+                    Button(onClick = onRetry, enabled = !deletion.isSubmitting) {
+                        Text("Thử lại")
+                    }
+                } else if (!deletion.isCompleted) {
+                    OutlinedButton(onClick = onRefresh) {
+                        Text("Cập nhật")
+                    }
+                }
+                if (deletion.sessionRevokedConfirmed || deletion.isCompleted) {
+                    TextButton(onClick = onSignOutNow) {
+                        Text("Đăng xuất ngay", color = colors.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeletionStepRow(label: String, stepStatus: String) {
+    val colors = MaterialTheme.colorScheme
+    val normalized = stepStatus.uppercase()
+    val statusText = when (normalized) {
+        "DONE" -> "Hoàn tất"
+        "IN_PROGRESS" -> "Đang xử lý"
+        "FAILED" -> "Lỗi"
+        else -> "Đang chờ"
+    }
+    val statusColor = when (normalized) {
+        "DONE" -> Color(0xFF137333)
+        "FAILED" -> colors.error
+        "IN_PROGRESS" -> colors.primary
+        else -> colors.onSurfaceVariant
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = statusColor
+        )
+    }
+}
+
+@Composable
+private fun DeleteAccountConfirmDialog(
+    email: String,
+    deletion: AccountDeletionUiState,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    onRetry: (password: String?) -> Unit,
+    onRefresh: () -> Unit,
+    onSignOutNow: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    var reauthPassword by remember { mutableStateOf("") }
+    val hasStarted = deletion.isVisible
+
+    AlertDialog(
+        onDismissRequest = { if (!deletion.isInProgress) onDismiss() },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (deletion.isInProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                Text(
+                    text = when {
+                        !hasStarted -> "Xóa tài khoản vĩnh viễn?"
+                        deletion.isCompleted -> "Đã xóa tài khoản hoàn tất"
+                        deletion.isFailed -> "Cần xác nhận thêm để xóa tài khoản"
+                        else -> "Đang xóa tài khoản..."
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = if (!hasStarted || deletion.isFailed) colors.error else colors.onSurface
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!hasStarted) {
+                    Text(
+                        text = "Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản ${email.ifBlank { "của bạn" }} không?\n\n" +
+                            "Hành động này không thể hoàn tác. Toàn bộ bài đăng, ảnh đã tải lên và hồ sơ cá nhân sẽ bị xóa sạch khỏi hệ thống.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    val steps = deletion.steps
+                    DeletionStepRow("1. Khóa tài khoản & thu hồi phiên", steps.sessionRevoked)
+                    DeletionStepRow(
+                        "2. Thu dọn bài đăng (${steps.firestorePostsDeleted} bài)",
+                        steps.firestorePostsStatus
+                    )
+                    DeletionStepRow(
+                        "3. Thu dọn ảnh (${steps.mediaAssetsDeleted} ảnh" +
+                            if (steps.legacyAuditCount > 0) ", đối soát ${steps.legacyAuditCount} ảnh cũ)" else ")",
+                        steps.mediaAssetsStatus
+                    )
+                    DeletionStepRow("4. Thu dọn hồ sơ & dữ liệu lưu", steps.firestoreUserDataStatus)
+                    DeletionStepRow("5. Xóa tài khoản xác thực Firebase", steps.firebaseAuthStatus)
+
+                    if (!deletion.error.isNullOrBlank()) {
+                        Text(
+                            text = deletion.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.error
+                        )
+                    }
+
+                    if (deletion.requiresReauth) {
+                        OutlinedTextField(
+                            value = reauthPassword,
+                            onValueChange = { if (it.length <= 64) reauthPassword = it },
+                            label = { Text("Mật khẩu hiện tại (nếu đăng nhập bằng Email)") },
+                            placeholder = { Text("Nhập mật khẩu để xác nhận...") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            enabled = !deletion.isSubmitting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                !hasStarted -> {
+                    Button(
+                        onClick = onConfirm,
+                        enabled = !deletion.isSubmitting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.error,
+                            contentColor = colors.onError
+                        )
+                    ) {
+                        Text("Xác nhận xóa")
+                    }
+                }
+                deletion.isFailed -> {
+                    Button(
+                        onClick = { onRetry(reauthPassword.takeIf { it.isNotBlank() }) },
+                        enabled = !deletion.isSubmitting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.error,
+                            contentColor = colors.onError
+                        )
+                    ) {
+                        Text(if (deletion.requiresReauth) "Xác nhận & Xóa" else "Thử lại")
+                    }
+                }
+                !deletion.isCompleted -> {
+                    OutlinedButton(onClick = onRefresh, enabled = !deletion.isSubmitting) {
+                        Text("Cập nhật")
+                    }
+                }
+                else -> {
+                    Button(onClick = onSignOutNow) {
+                        Text("Hoàn tất")
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            if (!hasStarted) {
+                TextButton(onClick = onDismiss, enabled = !deletion.isSubmitting) {
+                    Text("Hủy")
+                }
+            } else if (deletion.isFailed) {
+                TextButton(onClick = onSignOutNow, enabled = !deletion.isSubmitting) {
+                    Text("Đăng xuất để đăng nhập lại", color = colors.error)
+                }
+            }
+        }
+    )
 }
 
 @Composable

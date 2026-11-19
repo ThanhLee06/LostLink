@@ -116,4 +116,63 @@ class BackendApiClientTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun accountDeletionEndpointsParseStepsAndResume() = runBlocking {
+        val methods = mutableListOf<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/api/v1/account/deletion") { exchange ->
+                methods.add("${exchange.requestMethod} ${exchange.requestURI.path}")
+                val body = """{
+                    "uid": "u-1",
+                    "status": "IN_PROGRESS",
+                    "steps": {
+                        "sessionRevoked": "DONE",
+                        "firestorePosts": {"status": "DONE", "deleted": 3},
+                        "mediaAssets": {"status": "IN_PROGRESS", "deleted": 1, "failed": 0},
+                        "legacyMediaAudit": {"status": "DONE", "count": 2},
+                        "firestoreUserData": {"status": "PENDING"},
+                        "firebaseAuth": {"status": "PENDING"}
+                    },
+                    "lastError": null
+                }""".trimIndent().toByteArray()
+                exchange.responseHeaders.add("Content-Type", "application/json")
+                exchange.sendResponseHeaders(202, body.size.toLong())
+                exchange.responseBody.use { it.write(body) }
+            }
+            start()
+        }
+
+        try {
+            val client = BackendApiClient(
+                rawBaseUrl = "http://127.0.0.1:${server.address.port}",
+                tokenProvider = { "student-jwt" },
+                allowCleartext = true,
+            )
+            val init = client.requestAccountDeletion().getOrThrow()
+            assertEquals("u-1", init.uid)
+            assertEquals("IN_PROGRESS", init.status)
+            assertEquals("DONE", init.steps.sessionRevoked)
+            assertEquals(3, init.steps.firestorePostsDeleted)
+            assertEquals(1, init.steps.mediaAssetsDeleted)
+            assertEquals(2, init.steps.legacyAuditCount)
+
+            val polled = client.getAccountDeletionStatus().getOrThrow()
+            assertEquals("IN_PROGRESS", polled.status)
+
+            val resumed = client.resumeAccountDeletion().getOrThrow()
+            assertEquals("IN_PROGRESS", resumed.status)
+
+            assertEquals(
+                listOf(
+                    "POST /api/v1/account/deletion",
+                    "GET /api/v1/account/deletion",
+                    "POST /api/v1/account/deletion/resume",
+                ),
+                methods,
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
 }
