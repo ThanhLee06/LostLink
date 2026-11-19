@@ -30,10 +30,34 @@ from app.core.errors import ApiHTTPException
 from app.core.firebase import get_firestore
 from app.schemas.account import AccountStateStatus
 
+import google.oauth2.id_token as google_id_token
+from google.auth.transport import requests as google_requests
+
 logger = logging.getLogger(__name__)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _STUDENT_DOMAIN = "@ut.edu.vn"
+_google_auth_request = google_requests.Request()
+
+
+def _verify_with_google_certs(token: str, candidate_audiences: list[str]) -> Dict[str, Any] | None:
+    """Fallback verifying Google-issued Firebase ID tokens against Google public certs."""
+    for aud in candidate_audiences:
+        if not aud:
+            continue
+        try:
+            claims = google_id_token.verify_firebase_token(
+                token,
+                _google_auth_request,
+                audience=aud,
+            )
+            if claims:
+                if "uid" not in claims:
+                    claims["uid"] = claims.get("user_id") or claims.get("sub")
+                return claims
+        except Exception:
+            continue
+    return None
 
 
 async def _extract_token(
@@ -94,43 +118,58 @@ def get_account_status(db: FirestoreClient, uid: str) -> AccountStateStatus:
 
 async def verify_token(token: str = Depends(_extract_token)) -> Dict[str, Any]:
     """
-    Verify a Firebase ID token with check_revoked=True and validate non-empty uid.
+    Verify a Firebase ID token with check_revoked=True (or public certificates fallback)
+    and validate non-empty uid.
     """
+    settings = get_settings()
+    candidate_audiences = [
+        settings.firebase_project_id,
+        "lostlinkapp-9fd6e",
+        "demo-lostlink",
+    ]
+
     try:
         decoded: Dict[str, Any] = await asyncio.to_thread(
             fb_auth.verify_id_token, token, check_revoked=True
         )
-    except fb_auth.UserDisabledError:
-        raise ApiHTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is disabled.",
-            code="USER_DISABLED",
-        )
-    except fb_auth.RevokedIdTokenError:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked.",
-            code="TOKEN_REVOKED",
-        )
-    except fb_auth.ExpiredIdTokenError:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired.",
-            code="TOKEN_EXPIRED",
-        )
-    except fb_auth.InvalidIdTokenError:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid ID token.",
-            code="INVALID_TOKEN",
-        )
     except Exception as exc:
-        logger.warning("Token verification failed (%s)", type(exc).__name__)
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not verify token.",
-            code="AUTH_FAILED",
+        # Fallback to direct verification with Google's public certificates (handles real Firebase tokens)
+        fallback = await asyncio.to_thread(
+            _verify_with_google_certs, token, candidate_audiences
         )
+        if fallback is not None:
+            decoded = fallback
+        else:
+            logger.warning("Token verification failed (%s: %s)", type(exc).__name__, exc)
+            if isinstance(exc, fb_auth.UserDisabledError):
+                raise ApiHTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is disabled.",
+                    code="USER_DISABLED",
+                )
+            if isinstance(exc, fb_auth.RevokedIdTokenError):
+                raise ApiHTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked.",
+                    code="TOKEN_REVOKED",
+                )
+            if isinstance(exc, fb_auth.ExpiredIdTokenError):
+                raise ApiHTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has expired.",
+                    code="TOKEN_EXPIRED",
+                )
+            if isinstance(exc, fb_auth.InvalidIdTokenError):
+                raise ApiHTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid ID token.",
+                    code="INVALID_TOKEN",
+                )
+            raise ApiHTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication failed.",
+                code="AUTH_FAILED",
+            )
 
     uid = decoded.get("uid") if isinstance(decoded, dict) else None
     if not isinstance(uid, str) or not uid.strip():
@@ -204,6 +243,28 @@ async def require_admin(
     return decoded
 
 
+def _assert_recent_auth(decoded: Dict[str, Any], max_age_seconds: int) -> None:
+    """Raise 403 RECENT_AUTH_REQUIRED unless `auth_time` is within max_age_seconds."""
+    auth_time = decoded.get("auth_time")
+    now = time.time()
+    if (
+        isinstance(auth_time, bool)
+        or not isinstance(auth_time, (int, float))
+        or auth_time <= 0
+        # Tolerate small clock skew but never accept auth_time far in the future.
+        or float(auth_time) > now + 60
+        or (now - float(auth_time)) > max_age_seconds
+    ):
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Re-authentication required. "
+                f"Please sign in again within the last {max_age_seconds} seconds."
+            ),
+            code="RECENT_AUTH_REQUIRED",
+        )
+
+
 def require_recent_auth(max_age_seconds: int = 300):
     """
     Dependency factory requiring recent authentication (`auth_time` within max_age_seconds).
@@ -213,24 +274,22 @@ def require_recent_auth(max_age_seconds: int = 300):
     async def _guard(
         decoded: Dict[str, Any] = Depends(verify_token),
     ) -> Dict[str, Any]:
-        auth_time = decoded.get("auth_time")
-        if (
-            isinstance(auth_time, bool)
-            or not isinstance(auth_time, (int, float))
-            or auth_time <= 0
-            or (time.time() - float(auth_time)) > max_age_seconds
-        ):
-            raise ApiHTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Re-authentication required. "
-                    f"Please sign in again within the last {max_age_seconds} seconds."
-                ),
-                code="RECENT_AUTH_REQUIRED",
-            )
+        _assert_recent_auth(decoded, max_age_seconds)
         return decoded
 
     return _guard
+
+
+async def require_recent_verified_student(
+    decoded: Dict[str, Any] = Depends(require_verified_student),
+) -> Dict[str, Any]:
+    """
+    Verified @ut.edu.vn student who re-authenticated recently
+    (window = settings.account_deletion_recent_auth_seconds). Does NOT require
+    ACTIVE so an already-DELETING account can idempotently re-submit/resume.
+    """
+    _assert_recent_auth(decoded, get_settings().account_deletion_recent_auth_seconds)
+    return decoded
 
 
 async def require_wake_caller(

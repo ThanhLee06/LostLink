@@ -543,6 +543,12 @@ service cloud.firestore {
     }
 
     // ─── account_states & deletion_requests ──────────────────────────────────
+    // ST35: both docs are written ONLY by the backend (Admin SDK) via
+    // POST /api/v1/account/deletion. Once account_states.status = 'DELETING',
+    // isAccountActive() is false and every client write above/below is denied
+    // (posts, post_events, post_tombstones, reports, users, saved_posts), while
+    // the owner can still read these two documents to follow deletion progress.
+    // Revoked ID tokens are not checked by Rules; the DELETING lock covers that gap.
 
     match /account_states/{uid} {
       allow read: if isVerifiedStudent() && request.auth.uid == uid;

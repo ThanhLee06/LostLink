@@ -40,6 +40,15 @@ internal object SimpleJson {
         }
     }
 
+    fun booleanValue(map: Map<String, Any?>?, key: String, default: Boolean = false): Boolean {
+        val raw = map?.get(key) ?: return default
+        return when (raw) {
+            is Boolean -> raw
+            is String -> raw.toBooleanStrictOrNull() ?: default
+            else -> default
+        }
+    }
+
     @Suppress("UNCHECKED_CAST")
     fun objectValue(map: Map<String, Any?>?, key: String): Map<String, Any?>? {
         return map?.get(key) as? Map<String, Any?>

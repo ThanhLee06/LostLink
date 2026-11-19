@@ -1,7 +1,7 @@
 {
   "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "rules": "C:/Users/ASUS/firestore.rules",
+    "indexes": "C:/Users/ASUS/firestore.indexes.json"
   },
   "emulators": {
     "auth": { "host": "127.0.0.1", "port": 9099 },
