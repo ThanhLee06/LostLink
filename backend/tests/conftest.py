@@ -338,6 +338,9 @@ class FakeDocumentReference:
     def delete(self) -> None:
         self._client._raw_delete(self._collection_name, self.id)
 
+    def collection(self, collection_path: str) -> "FakeCollectionReference":
+        return FakeCollectionReference(self._client, f"{self.path}/{collection_path}")
+
 
 class FakeCollectionReference(FakeQuery):
     def __init__(self, client: "FakeFirestoreClient", name: str) -> None:

@@ -26,6 +26,10 @@ from google.cloud.firestore_v1 import FieldFilter, Query
 from app.core.config import get_settings
 from app.core.errors import redact_sensitive_text
 from app.worker.claim import ClaimError, TokenMismatchError, claim_job, fail_job
+from app.worker.handlers.account_deletion_handler import (
+    process_one_account_deletion,
+    query_pending_deletion_uids,
+)
 from app.worker.handlers.media_cleanup_handler import (
     _cleanup_claimed_abandoned_asset,
     _query_abandoned_or_pending_media_ids,
@@ -35,6 +39,7 @@ from app.worker.handlers.media_cleanup_handler import (
 logger = logging.getLogger(__name__)
 
 _ABANDONED_MEDIA_LANE = "__abandonedMedia__"
+_ACCOUNT_DELETION_LANE = "__accountDeletion__"
 _batch_rotation_lock = threading.Lock()
 _batch_rotation_cursor: int = 0
 
@@ -172,10 +177,11 @@ async def run_batch(
     lease_seconds: Optional[int] = None,
     handlers: Optional[Dict[str, Optional[JobHandler]]] = None,
     include_media_sweep: bool = True,
+    include_account_deletion: bool = True,
 ) -> int:
     """
     Claim and execute up to *batch_size* eligible jobs using round-robin fairness
-    across enabled handlers (and abandoned draft media when mediaCleanupJob is active).
+    across enabled handlers, abandoned draft media, and pending account deletions.
     """
     settings = get_settings()
     effective_limit = batch_size if batch_size is not None else settings.worker_batch_limit
@@ -188,16 +194,37 @@ async def run_batch(
     active_handlers = {
         name: fn for name, fn in registry.items() if fn is not None
     }
-    if not active_handlers or effective_limit <= 0:
+    if effective_limit <= 0:
         return 0
 
     now = datetime.now(tz=timezone.utc)
+    deletion_queue: Deque[str] = deque()
+    if include_account_deletion:
+        deletion_uids = await asyncio.to_thread(
+            query_pending_deletion_uids,
+            db,
+            limit=effective_limit,
+            now=now,
+        )
+        deletion_queue = deque(deletion_uids)
+
+    if not active_handlers and not deletion_queue:
+        return 0
+
     queues: Dict[str, Deque[Tuple[str, Dict[str, Any]]]] = {}
     for job_name in active_handlers:
-        items = await asyncio.to_thread(
-            _query_candidates_for_job, db, job_name, effective_limit, now
-        )
-        queues[job_name] = deque(items)
+        try:
+            items = await asyncio.to_thread(
+                _query_candidates_for_job, db, job_name, effective_limit, now
+            )
+            queues[job_name] = deque(items)
+        except Exception as exc:
+            logger.warning(
+                "Worker skipped %s due to query failure (%s)",
+                job_name,
+                redact_sensitive_text(str(exc)),
+            )
+            queues[job_name] = deque()
 
     abandoned_queue: Deque[str] = deque()
     abandoned_cutoff = now
@@ -206,18 +233,27 @@ async def run_batch(
         from datetime import timedelta
 
         abandoned_cutoff = now - timedelta(seconds=settings.media_abandoned_ttl_seconds)
-        abandoned_ids = await asyncio.to_thread(
-            _query_abandoned_or_pending_media_ids,
-            db,
-            cutoff=abandoned_cutoff,
-            limit=effective_limit,
-            now=now,
-        )
-        abandoned_queue = deque(abandoned_ids)
+        try:
+            abandoned_ids = await asyncio.to_thread(
+                _query_abandoned_or_pending_media_ids,
+                db,
+                cutoff=abandoned_cutoff,
+                limit=effective_limit,
+                now=now,
+            )
+            abandoned_queue = deque(abandoned_ids)
+        except Exception as exc:
+            logger.warning(
+                "Worker skipped abandoned media sweep due to query failure (%s)",
+                redact_sensitive_text(str(exc)),
+            )
+            abandoned_queue = deque()
 
     lanes = list(active_handlers.keys())
     if sweep_enabled:
         lanes.append(_ABANDONED_MEDIA_LANE)
+    if deletion_queue:
+        lanes.append(_ACCOUNT_DELETION_LANE)
 
     global _batch_rotation_cursor
     with _batch_rotation_lock:
@@ -228,12 +264,27 @@ async def run_batch(
     processed = 0
 
     while processed < effective_limit and (
-        any(queues.values()) or bool(abandoned_queue)
+        any(queues.values()) or bool(abandoned_queue) or bool(deletion_queue)
     ):
         made_progress = False
         for lane_name in ordered_lanes:
             if processed >= effective_limit:
                 break
+
+            if lane_name == _ACCOUNT_DELETION_LANE:
+                while deletion_queue:
+                    target_uid = deletion_queue.popleft()
+                    handled = await process_one_account_deletion(
+                        db,
+                        uid=target_uid,
+                        worker_id=effective_worker_id,
+                        lease_seconds=effective_lease,
+                    )
+                    if handled:
+                        processed += 1
+                        made_progress = True
+                        break
+                continue
 
             if lane_name == _ABANDONED_MEDIA_LANE:
                 while abandoned_queue:
@@ -309,6 +360,7 @@ async def drain_until_idle(
     lease_seconds: Optional[int] = None,
     handlers: Optional[Dict[str, Optional[JobHandler]]] = None,
     include_media_sweep: bool = True,
+    include_account_deletion: bool = True,
 ) -> int:
     """
     Repeatedly execute bounded `run_batch` sweeps until a sweep processes 0 items
@@ -323,6 +375,7 @@ async def drain_until_idle(
             lease_seconds=lease_seconds,
             handlers=handlers,
             include_media_sweep=include_media_sweep,
+            include_account_deletion=include_account_deletion,
         )
         total += count
         if count == 0:
