@@ -2,9 +2,11 @@ package com.example.lostlink.ui.saved
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -23,7 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -122,7 +126,7 @@ fun SavedPostsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when {
-                    state.loading && state.posts.isEmpty() -> {
+                    state.loading && state.items.isEmpty() -> {
                         item(key = "loading") {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
@@ -139,7 +143,7 @@ fun SavedPostsScreen(
                         }
                     }
 
-                    state.error != null && state.posts.isEmpty() -> {
+                    state.error != null && state.items.isEmpty() -> {
                         item(key = "error") {
                             FeedNotice(
                                 title = "Chưa tải được tin đã lưu",
@@ -152,7 +156,7 @@ fun SavedPostsScreen(
                         }
                     }
 
-                    state.posts.isEmpty() -> {
+                    state.items.isEmpty() -> {
                         item(key = "empty") {
                             FeedNotice(
                                 title = "Chưa có tin đã lưu",
@@ -177,14 +181,27 @@ fun SavedPostsScreen(
                             }
                         }
 
-                        items(state.posts, key = { "saved:${it.id}" }) { post ->
-                            HomePostCard(
-                                post = post,
-                                onClick = { onPostClick(post.id) },
-                                isSaved = post.id in state.savedPostIds,
-                                isSavePending = post.id in state.pendingPostIds,
-                                onToggleSave = { viewModel.toggleSave(post.id) },
-                            )
+                        items(state.items, key = { "saved:${it.postId}" }) { item ->
+                            val isPending = item.postId in state.pendingPostIds
+                            when (item) {
+                                is SavedPostItem.Available -> {
+                                    HomePostCard(
+                                        post = item.post,
+                                        onClick = { onPostClick(item.post.id) },
+                                        isSaved = item.postId in state.savedPostIds,
+                                        isSavePending = isPending,
+                                        onToggleSave = { viewModel.toggleSave(item.postId) },
+                                    )
+                                }
+
+                                is SavedPostItem.Unavailable -> {
+                                    UnavailableSavedPostCard(
+                                        postId = item.postId,
+                                        isPending = isPending,
+                                        onRemove = { viewModel.removeSavedPost(item.postId) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -193,3 +210,43 @@ fun SavedPostsScreen(
     }
 }
 
+@Composable
+private fun UnavailableSavedPostCard(
+    postId: String,
+    isPending: Boolean,
+    onRemove: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("unavailable-saved:$postId"),
+        color = colors.surface,
+        shape = HomeTokens.CardShape,
+        border = BorderStroke(1.dp, colors.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(HomeTokens.CardPadding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Bài viết hiện không khả dụng",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onSurface,
+                )
+                Text(
+                    text = "Bài viết đã bị xóa hoặc không còn được hiển thị.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+            TextButton(
+                onClick = onRemove,
+                enabled = !isPending,
+                modifier = Modifier.testTag("remove-unavailable:$postId"),
+            ) {
+                Text("Gỡ khỏi danh sách")
+            }
+        }
+    }
+}

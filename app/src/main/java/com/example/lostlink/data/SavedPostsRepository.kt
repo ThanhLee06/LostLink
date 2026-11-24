@@ -10,9 +10,6 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,8 +20,17 @@ import kotlinx.coroutines.withTimeout
 data class SavedPostEntry(
     val postId: String,
     val savedAtMillis: Long,
-    val titleSnapshot: String = "",
 )
+
+sealed interface SavedPostResolution {
+    data class Available(val post: HomePost) : SavedPostResolution
+    data class Unavailable(val postId: String) : SavedPostResolution
+    data class Error(
+        val postId: String,
+        val message: String,
+        val isAuthError: Boolean = false,
+    ) : SavedPostResolution
+}
 
 class SaveInProgressException : IllegalStateException("Đang xử lý lưu bài đăng.")
 
@@ -35,10 +41,14 @@ interface SavedPostsBackend {
         onError: (Throwable) -> Unit,
     ): () -> Unit
 
+    fun observePost(
+        postId: String,
+        onResult: (SavedPostResolution) -> Unit,
+    ): () -> Unit
+
     suspend fun checkPostAvailableForSave(postId: String): Result<HomePost>
     suspend fun savePost(uid: String, post: HomePost): Result<Unit>
     suspend fun unsavePost(uid: String, postId: String): Result<Unit>
-    suspend fun fetchAccessibleSavedPosts(entries: List<SavedPostEntry>): List<HomePost>
 }
 
 class FirestoreSavedPostsBackend(
@@ -162,23 +172,64 @@ class FirestoreSavedPostsBackend(
         }
     }
 
-    override suspend fun fetchAccessibleSavedPosts(entries: List<SavedPostEntry>): List<HomePost> = coroutineScope {
-        entries.map { entry ->
-            async {
-                runCatching {
-                    val doc = withTimeout(TIMEOUT_MS) {
-                        firestore.collection("posts").document(entry.postId).get(Source.SERVER).await()
+    override fun observePost(
+        postId: String,
+        onResult: (SavedPostResolution) -> Unit,
+    ): () -> Unit {
+        val registration = firestore.collection("posts")
+            .document(postId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    logFirestoreError("observePost", "posts/$postId", null, postId, error)
+                    val code = (error as? FirebaseFirestoreException)?.code
+                    val resolution = when (code) {
+                        FirebaseFirestoreException.Code.PERMISSION_DENIED -> {
+                            // When authenticated, PERMISSION_DENIED on posts/{id} means Admin hid the post.
+                            if (auth.currentUser != null) {
+                                SavedPostResolution.Unavailable(postId)
+                            } else {
+                                SavedPostResolution.Error(
+                                    postId = postId,
+                                    message = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                                    isAuthError = true,
+                                )
+                            }
+                        }
+                        FirebaseFirestoreException.Code.UNAUTHENTICATED -> SavedPostResolution.Error(
+                            postId = postId,
+                            message = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                            isAuthError = true,
+                        )
+                        FirebaseFirestoreException.Code.UNAVAILABLE,
+                        FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> SavedPostResolution.Error(
+                            postId = postId,
+                            message = "Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.",
+                        )
+                        else -> SavedPostResolution.Error(
+                            postId = postId,
+                            message = mapFirestoreError(error, "Không thể tải thông tin bài viết."),
+                        )
                     }
-                    if (!doc.exists()) return@async null
-                    val post = HomePost.fromDocument(doc.id, doc.data.orEmpty())
-                    if (post.isVisibleOnFeed) post else null
-                }.getOrElse { err ->
-                    if (err is CancellationException && err !is TimeoutCancellationException) throw err
-                    logFirestoreError("fetchAccessibleSavedPosts", "posts/${entry.postId}", null, entry.postId, err)
-                    null
+                    onResult(resolution)
+                    return@addSnapshotListener
                 }
+
+                if (snapshot == null || !snapshot.exists()) {
+                    onResult(SavedPostResolution.Unavailable(postId))
+                    return@addSnapshotListener
+                }
+
+                val parsed = runCatching {
+                    HomePost.fromDocument(snapshot.id, snapshot.data.orEmpty())
+                }.getOrNull()
+
+                val resolution = when {
+                    parsed == null || !parsed.isVisibleOnFeed -> SavedPostResolution.Unavailable(postId)
+                    else -> SavedPostResolution.Available(parsed)
+                }
+                onResult(resolution)
             }
-        }.awaitAll().filterNotNull()
+        return { registration.remove() }
     }
 
     private fun logFirestoreError(
@@ -304,7 +355,7 @@ class SavedPostsRepository(
                 _savedPostIds.update { it + cleanId }
                 _savedEntries.update { list ->
                     if (list.any { it.postId == cleanId }) list
-                    else listOf(SavedPostEntry(cleanId, System.currentTimeMillis(), titleHint)) + list
+                    else listOf(SavedPostEntry(cleanId, System.currentTimeMillis())) + list
                 }
             }
         }
@@ -336,9 +387,43 @@ class SavedPostsRepository(
         }
     }
 
-    suspend fun loadAccessibleSavedPosts(entries: List<SavedPostEntry> = _savedEntries.value): List<HomePost> {
-        if (entries.isEmpty()) return emptyList()
-        return backend.fetchAccessibleSavedPosts(entries)
+    fun observePost(postId: String, onResult: (SavedPostResolution) -> Unit): () -> Unit {
+        return backend.observePost(postId, onResult)
+    }
+
+    suspend fun unsave(postId: String): Result<Unit> {
+        val cleanId = postId.trim()
+        if (cleanId.isBlank()) {
+            return Result.failure(IllegalArgumentException("Mã bài đăng không hợp lệ."))
+        }
+        val uid = activeUidProvider()?.takeIf { it.isNotBlank() }
+            ?: return Result.failure(SecurityException("Vui lòng đăng nhập bằng tài khoản UTH đã xác minh."))
+
+        bindUser(uid)
+        if (!tryAcquirePending(cleanId)) {
+            return Result.failure(SaveInProgressException())
+        }
+
+        val wasSaved = cleanId in _savedPostIds.value
+        val previousEntry = _savedEntries.value.firstOrNull { it.postId == cleanId }
+        if (isStillBound(uid) && wasSaved) {
+            _savedPostIds.update { it - cleanId }
+            _savedEntries.update { list -> list.filterNot { it.postId == cleanId } }
+        }
+
+        return try {
+            backend.unsavePost(uid, cleanId).fold(
+                onSuccess = { Result.success(Unit) },
+                onFailure = { err ->
+                    if (wasSaved) {
+                        restoreState(uid, cleanId, wasSaved = true, previousEntry = previousEntry)
+                    }
+                    Result.failure(err)
+                },
+            )
+        } finally {
+            releasePending(cleanId)
+        }
     }
 
     private fun restoreState(
