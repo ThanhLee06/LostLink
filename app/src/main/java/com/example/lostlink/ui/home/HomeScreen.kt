@@ -41,6 +41,7 @@ fun HomeScreen(
     resetSearchRequest: Int = 0,
     onSearchActive: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
+    onToggleSave: ((HomePost) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     var search by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
@@ -324,7 +325,15 @@ fun HomeScreen(
                     }
                 }
                 items(visible, key = { "post:${it.id}" }, contentType = { "post-card" }) { post ->
-                    HomePostCard(post, if (canOpenPosts) ({ onPost(post.id) }) else null)
+                    HomePostCard(
+                        post = post,
+                        onClick = if (canOpenPosts) ({ onPost(post.id) }) else null,
+                        isSaved = post.id in state.savedPostIds,
+                        isSavePending = post.id in state.pendingSavePostIds,
+                        onToggleSave = if (onToggleSave != null && state.allowed) {
+                            { onToggleSave(post) }
+                        } else null,
+                    )
                 }
                 if (state.posts.isNotEmpty() || state.hasMore) {
                     item(key = "pagination") {

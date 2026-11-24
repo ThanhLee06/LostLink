@@ -16,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,7 +47,8 @@ fun PostDetailScreen(
     onRetry: () -> Unit,
     onEditPost: ((HomePost) -> Unit)? = null,
     currentUserId: String? = null,
-    onPostChanged: ((postId: String, action: String) -> Unit)? = null
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null,
+    onToggleSave: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val activeUserId = currentUserId ?: remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
@@ -63,7 +66,26 @@ fun PostDetailScreen(
                 TextButton(onClick = { state.detail?.post?.let { onEditPost(it) } }) {
                     Text("Chỉnh sửa", color = colors.primary, fontWeight = FontWeight.Bold)
                 }
-            } else {
+            }
+            if (onToggleSave != null && state.status == DetailStatus.READY && state.detail != null) {
+                IconButton(
+                    onClick = onToggleSave,
+                    enabled = !state.isSavePending,
+                    modifier = Modifier
+                        .size(HomeTokens.Target)
+                        .testTag("detail-save-button")
+                        .semantics {
+                            contentDescription = if (state.isSaved) "Bỏ thích bài đăng" else "Thích bài đăng"
+                        },
+                ) {
+                    Icon(
+                        imageVector = if (state.isSaved) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = null,
+                        tint = if (state.isSaved) Color(0xFFE53935) else colors.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            } else if (!(isOwner && onEditPost != null && state.detail?.post?.isHidden != true)) {
                 Spacer(Modifier.width(HomeTokens.Target))
             }
         }
