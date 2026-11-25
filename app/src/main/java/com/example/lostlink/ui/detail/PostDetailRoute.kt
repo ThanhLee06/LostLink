@@ -1,8 +1,10 @@
 
 package com.example.lostlink.ui.detail
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import com.example.lostlink.ui.home.HomePost
 
 @Composable
@@ -31,6 +33,7 @@ fun PostDetailRoute(
     } ?: PostDetailState(postId, DetailStatus.LOADING)
 
     val activeUid = currentUserId ?: model.currentUserId
+    val context = LocalContext.current
 
     PostDetailScreen(
         state = visible,
@@ -38,7 +41,12 @@ fun PostDetailRoute(
         onRetry = model::retry,
         onEditPost = onEditPost,
         currentUserId = activeUid,
-        onPostChanged = onPostChanged
+        onPostChanged = onPostChanged,
+        onToggleSave = {
+            model.toggleSave { msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        },
     )
 }
 

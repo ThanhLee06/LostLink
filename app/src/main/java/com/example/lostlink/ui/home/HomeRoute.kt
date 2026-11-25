@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.lostlink.ui.myposts.MyPostsScreen
 import com.example.lostlink.ui.profile.ProfileScreen
 import com.example.lostlink.ui.profile.ProfileViewModel
+import com.example.lostlink.ui.saved.SavedPostsScreen
 
 @Composable
 fun HomeRoute(
@@ -38,6 +39,7 @@ fun HomeRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var showMyPosts by rememberSaveable { mutableStateOf(false) }
+    var showSavedPosts by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var searchRequest by rememberSaveable { mutableIntStateOf(0) }
     var homeRequest by rememberSaveable { mutableIntStateOf(0) }
@@ -56,14 +58,20 @@ fun HomeRoute(
 
     BackHandler(
         enabled = detailContent == null &&
-                (showMyPosts || selected == 4)
+                (showMyPosts || showSavedPosts || selected == 4)
     ) {
-        if (showMyPosts) {
-            showMyPosts = false
-            model.refreshAfterPostModified()
-        } else {
-            selected = 0
-            homeRequest++
+        when {
+            showMyPosts -> {
+                showMyPosts = false
+                model.refreshAfterPostModified()
+            }
+            showSavedPosts -> {
+                showSavedPosts = false
+            }
+            else -> {
+                selected = 0
+                homeRequest++
+            }
         }
     }
 
@@ -77,6 +85,7 @@ fun HomeRoute(
                 if (HomePostCreation.consume(activity.intent, accountId)) {
                     selected = 0
                     showMyPosts = false
+                    showSavedPosts = false
                     homeRequest++
                     resetSearchRequest++
                     model.refreshAfterPostCreated()
@@ -96,6 +105,7 @@ fun HomeRoute(
             0 -> {
                 onReturnHome()
                 showMyPosts = false
+                showSavedPosts = false
                 selected = 0
                 homeRequest++
             }
@@ -103,6 +113,7 @@ fun HomeRoute(
             1 -> {
                 onReturnHome()
                 showMyPosts = false
+                showSavedPosts = false
                 selected = 1
                 searchRequest++
             }
@@ -130,12 +141,13 @@ fun HomeRoute(
             4 -> {
                 onReturnHome()
                 showMyPosts = false
+                showSavedPosts = false
                 selected = 4
             }
         }
     }
 
-    val isAccountTab = selected == 4 || showMyPosts
+    val isAccountTab = selected == 4 || showMyPosts || showSavedPosts
 
     HomeTheme {
         HomeSystemBars()
@@ -187,20 +199,33 @@ fun HomeRoute(
                         )
                     }
 
+                    showSavedPosts -> {
+                        SavedPostsScreen(
+                            currentUserId = model.accounts.currentUserId,
+                            onBack = { showSavedPosts = false },
+                            onPostClick = { onPost?.invoke(it) },
+                        )
+                    }
+
                     selected == 4 && onSignOut != null -> {
                         savedScreens.SaveableStateProvider("profile") {
                             val profileViewModel =
                                 viewModel<ProfileViewModel>(factory = ProfileViewModel.factory(context))
 
                             Column(Modifier.fillMaxSize()) {
-                                TextButton(
-                                    onClick = { showMyPosts = true },
+                                Row(
                                     modifier = Modifier.padding(
                                         horizontal = 12.dp,
                                         vertical = 4.dp
-                                    )
+                                    ),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text("Bài đăng của tôi")
+                                    TextButton(onClick = { showMyPosts = true }) {
+                                        Text("Bài đăng của tôi")
+                                    }
+                                    TextButton(onClick = { showSavedPosts = true }) {
+                                        Text("Tin đã lưu")
+                                    }
                                 }
 
                                 Box(Modifier.weight(1f)) {
@@ -252,7 +277,12 @@ fun HomeRoute(
                                 resetSearchRequest = resetSearchRequest,
                                 onSearchActive = { active ->
                                     if (active) selected = 1
-                                }
+                                },
+                                onToggleSave = { post ->
+                                    model.toggleSavePost(post.id, post.title) { msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                             )
                         }
                     }

@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.lostlink.data.FirebaseAccountRepository
+import com.example.lostlink.data.SaveInProgressException
+import com.example.lostlink.data.SavedPostsRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldPath
@@ -22,6 +24,8 @@ data class HomeState(
     val loading: Boolean = false,
     val hasMore: Boolean = false,
     val error: String? = null,
+    val savedPostIds: Set<String> = emptySet(),
+    val pendingSavePostIds: Set<String> = emptySet(),
 )
 
 internal data class FeedPageResult<D>(
@@ -83,7 +87,9 @@ internal fun <D> applyFeedPageToState(
 }
 
 /** Reads public feed posts (moderationStatus=VISIBLE, status in [OPEN, RESOLVED]) and smoke search. */
-class HomeViewModel : ViewModel() {
+class HomeViewModel(
+    private val savedPosts: SavedPostsRepository = SavedPostsRepository.getInstance(),
+) : ViewModel() {
     val accounts = FirebaseAccountRepository()
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
@@ -106,12 +112,39 @@ class HomeViewModel : ViewModel() {
             feedRequest++
             refreshPending = false
             cursor = null
-            state = HomeState(allowed = next != null)
+            savedPosts.bindUser(next)
+            state = HomeState(
+                allowed = next != null,
+                savedPostIds = savedPosts.savedPostIds.value,
+                pendingSavePostIds = savedPosts.pendingPostIds.value,
+            )
             if (next != null) load()
         }
     }
 
-    init { auth.addIdTokenListener(authListener) }
+    init {
+        auth.addIdTokenListener(authListener)
+        viewModelScope.launch {
+            savedPosts.savedPostIds.collect { ids ->
+                state = state.copy(savedPostIds = ids)
+            }
+        }
+        viewModelScope.launch {
+            savedPosts.pendingPostIds.collect { pending ->
+                state = state.copy(pendingSavePostIds = pending)
+            }
+        }
+    }
+
+    fun toggleSavePost(postId: String, titleHint: String = "", onError: (String) -> Unit = {}) {
+        if (closed || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return
+        viewModelScope.launch {
+            savedPosts.toggleSave(postId, titleHint).onFailure { err ->
+                if (err is SaveInProgressException) return@onFailure
+                onError(err.localizedMessage ?: "Không thể cập nhật trạng thái lưu.")
+            }
+        }
+    }
 
     fun refreshAfterPostCreated() {
         if (closed || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return

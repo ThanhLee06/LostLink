@@ -4,11 +4,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -23,7 +27,13 @@ fun PostCard(post: HomePost, onClick: () -> Unit) = HomePostCard(post, onClick)
 
 /** A missing navigation handler produces a readable static card, not a fake button. */
 @Composable
-internal fun HomePostCard(post: HomePost, onClick: (() -> Unit)?) {
+internal fun HomePostCard(
+    post: HomePost,
+    onClick: (() -> Unit)?,
+    isSaved: Boolean = false,
+    isSavePending: Boolean = false,
+    onToggleSave: (() -> Unit)? = null,
+) {
     val colors = MaterialTheme.colorScheme
     val largeText = LocalDensity.current.fontScale > 1.3f
     val body: @Composable () -> Unit = {
@@ -32,14 +42,36 @@ internal fun HomePostCard(post: HomePost, onClick: (() -> Unit)?) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                     PostImage(post.images.firstOrNull(), Modifier.size(112.dp))
                     Spacer(Modifier.width(12.dp))
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.TopEnd) { TypeBadge(post) }
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TypeBadge(post)
+                        if (onToggleSave != null) {
+                            SaveHeartButton(
+                                postId = post.id,
+                                isSaved = isSaved,
+                                isPending = isSavePending,
+                                onClick = onToggleSave,
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 PostText(post, showBadge = false)
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     PostImage(post.images.firstOrNull(), Modifier.size(88.dp))
-                    Box(Modifier.weight(1f)) { PostText(post, showBadge = true) }
+                    Box(Modifier.weight(1f)) {
+                        PostText(
+                            post = post,
+                            showBadge = true,
+                            isSaved = isSaved,
+                            isSavePending = isSavePending,
+                            onToggleSave = onToggleSave,
+                        )
+                    }
                 }
             }
         }
@@ -53,13 +85,66 @@ internal fun HomePostCard(post: HomePost, onClick: (() -> Unit)?) {
 }
 
 @Composable
-private fun PostText(post: HomePost, showBadge: Boolean) {
+private fun PostText(
+    post: HomePost,
+    showBadge: Boolean,
+    isSaved: Boolean = false,
+    isSavePending: Boolean = false,
+    onToggleSave: (() -> Unit)? = null,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (showBadge) TypeBadge(post)
+        if (showBadge || onToggleSave != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (showBadge) {
+                    Box(Modifier.weight(1f, fill = false)) { TypeBadge(post) }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                if (onToggleSave != null) {
+                    SaveHeartButton(
+                        postId = post.id,
+                        isSaved = isSaved,
+                        isPending = isSavePending,
+                        onClick = onToggleSave,
+                    )
+                }
+            }
+        }
         Text(post.title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.testTag("post-title:${post.id}"))
         Metadata(HomeIcon.PIN, post.location)
         Metadata(HomeIcon.CLOCK, "Đăng ${postedTime(post.createdAt)}")
+    }
+}
+
+@Composable
+private fun SaveHeartButton(
+    postId: String,
+    isSaved: Boolean,
+    isPending: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    IconButton(
+        onClick = onClick,
+        enabled = !isPending,
+        modifier = Modifier
+            .size(36.dp)
+            .testTag("save-button:$postId")
+            .semantics {
+                contentDescription = if (isSaved) "Bỏ thích bài đăng" else "Thích bài đăng"
+            },
+    ) {
+        Icon(
+            imageVector = if (isSaved) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+            contentDescription = null,
+            tint = if (isSaved) Color(0xFFE53935) else colors.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 
