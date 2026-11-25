@@ -1,6 +1,9 @@
 package com.example.lostlink.ui.profile
 
+import android.app.Activity
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,7 +13,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,8 +28,12 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.example.lostlink.ui.home.FeedNotice
 import com.example.lostlink.ui.home.HomeIcon
 import com.example.lostlink.ui.home.HomePost
@@ -49,10 +58,51 @@ fun ProfileScreen(
     var showPersonalInfoDialog by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showSignOutConfirmDialog by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showReauthDialog by remember { mutableStateOf(false) }
+    var deleteReason by remember { mutableStateOf("") }
+    var reauthPassword by remember { mutableStateOf("") }
+    var reauthError by remember { mutableStateOf<String?>(null) }
 
     var postToDelete by remember { mutableStateOf<HomePost?>(null) }
     var postToResolve by remember { mutableStateOf<HomePost?>(null) }
     var postToClose by remember { mutableStateOf<HomePost?>(null) }
+
+    val googleReauthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_CANCELED) {
+            viewModel.cancelAccountDeletion()
+            return@rememberLauncherForActivityResult
+        }
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val idToken = account?.idToken
+            if (!idToken.isNullOrBlank()) {
+                viewModel.reauthenticateWithGoogleAndRetryDeletion(
+                    idToken = idToken,
+                    reason = deleteReason.takeIf { it.isNotBlank() },
+                    onSuccess = {
+                        showReauthDialog = false
+                        Toast.makeText(
+                            context,
+                            "Yêu cầu xóa tài khoản đã được tiếp nhận. Tài khoản đã bị khóa và đăng xuất.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        onSignOut()
+                    },
+                    onError = { err ->
+                        reauthError = err
+                    }
+                )
+            } else {
+                reauthError = "Không nhận được token xác thực từ Google."
+            }
+        } catch (e: Exception) {
+            reauthError = "Xác thực Google thất bại: ${e.localizedMessage}"
+        }
+    }
 
     BoxWithConstraints(modifier.fillMaxSize().background(colors.background)) {
         val gutter = if (maxWidth >= 600.dp) 32.dp else HomeTokens.Gutter
@@ -239,6 +289,17 @@ fun ProfileScreen(
                             icon = HomeIcon.HELP,
                             title = "Trợ giúp & hỗ trợ",
                             onClick = { showHelpDialog = true }
+                        )
+                        HorizontalDivider(color = colors.outlineVariant)
+                        OptionRow(
+                            icon = HomeIcon.CLOSE,
+                            title = "Xóa tài khoản",
+                            titleColor = colors.error,
+                            iconColor = colors.error,
+                            onClick = {
+                                deleteReason = ""
+                                showDeleteAccountDialog = true
+                            }
                         )
                     }
                 }
@@ -432,6 +493,210 @@ fun ProfileScreen(
             }
         )
     }
+
+    if (showDeleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!viewModel.isDeletingAccount) showDeleteAccountDialog = false
+            },
+            icon = {
+                Icon(
+                    Icons.Outlined.Warning,
+                    contentDescription = null,
+                    tint = colors.error,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    "Xác nhận xóa tài khoản?",
+                    fontWeight = FontWeight.Bold,
+                    color = colors.error
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Khi xác nhận, tài khoản của bạn sẽ lập tức bị khóa ở trạng thái ĐANG XÓA (DELETING):",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text("• Tất cả bài đăng của bạn sẽ ngay lập tức bị ẩn khỏi Trang chủ, Tìm kiếm và Ghép cặp.")
+                    Text("• Phiên đăng nhập hiện tại sẽ bị thu hồi và bạn sẽ được đăng xuất.")
+                    Text("• Hệ thống sẽ chặn tạo bài mới và tương tác trong lúc chờ dọn dẹp dữ liệu.")
+
+                    OutlinedTextField(
+                        value = deleteReason,
+                        onValueChange = { deleteReason = it },
+                        label = { Text("Lý do xóa tài khoản (tùy chọn)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        maxLines = 3,
+                        enabled = !viewModel.isDeletingAccount
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !viewModel.isDeletingAccount,
+                    onClick = {
+                        viewModel.deleteAccount(
+                            reason = deleteReason.takeIf { it.isNotBlank() },
+                            onSuccess = {
+                                showDeleteAccountDialog = false
+                                Toast.makeText(
+                                    context,
+                                    "Yêu cầu xóa tài khoản đã được tiếp nhận. Tài khoản đã bị khóa và đăng xuất.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                onSignOut()
+                            },
+                            onRequireReauth = {
+                                showDeleteAccountDialog = false
+                                reauthPassword = ""
+                                reauthError = null
+                                showReauthDialog = true
+                            },
+                            onError = { err ->
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                ) {
+                    if (viewModel.isDeletingAccount) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Xác nhận xóa", color = colors.error, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !viewModel.isDeletingAccount,
+                    onClick = { showDeleteAccountDialog = false }
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
+    if (showReauthDialog) {
+        val isGoogleUser = viewModel.isGoogleUser
+        AlertDialog(
+            onDismissRequest = {
+                if (!viewModel.isDeletingAccount) showReauthDialog = false
+            },
+            icon = {
+                Icon(
+                    Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text("Xác thực lại danh tính", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isGoogleUser) {
+                        Text(
+                            "Để bảo mật cho thao tác xóa tài khoản, hệ thống yêu cầu bạn xác thực lại gần nhất (trong vòng 5 phút). Vì bạn đăng nhập bằng Google, vui lòng nhấn nút bên dưới để xác thực lại với tài khoản Google sinh viên của bạn:"
+                        )
+                    } else {
+                        Text(
+                            "Để bảo mật cho thao tác xóa tài khoản, hệ thống yêu cầu bạn xác thực lại gần nhất (trong vòng 5 phút). Vui lòng nhập mật khẩu của tài khoản:"
+                        )
+                        OutlinedTextField(
+                            value = reauthPassword,
+                            onValueChange = {
+                                reauthPassword = it
+                                reauthError = null
+                            },
+                            label = { Text("Mật khẩu tài khoản") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !viewModel.isDeletingAccount
+                        )
+                    }
+                    if (reauthError != null) {
+                        Text(
+                            text = reauthError!!,
+                            color = colors.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (isGoogleUser) {
+                    Button(
+                        enabled = !viewModel.isDeletingAccount,
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.error),
+                        onClick = {
+                            reauthError = null
+                            try {
+                                val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+                                val defaultWebClientId = if (resId != 0) context.resources.getString(resId) else ""
+                                val gsoBuilder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestEmail()
+                                if (defaultWebClientId.isNotBlank()) {
+                                    gsoBuilder.requestIdToken(defaultWebClientId)
+                                }
+                                val googleSignInClient = GoogleSignIn.getClient(context, gsoBuilder.build())
+                                googleSignInClient.signOut().addOnCompleteListener {
+                                    googleReauthLauncher.launch(googleSignInClient.signInIntent)
+                                }
+                            } catch (e: Exception) {
+                                reauthError = "Không thể mở hộp thoại xác thực Google: ${e.localizedMessage}"
+                            }
+                        }
+                    ) {
+                        if (viewModel.isDeletingAccount) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Xác thực Google & Xóa", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    TextButton(
+                        enabled = reauthPassword.isNotBlank() && !viewModel.isDeletingAccount,
+                        onClick = {
+                            viewModel.reauthenticateAndRetryDeletion(
+                                password = reauthPassword,
+                                reason = deleteReason.takeIf { it.isNotBlank() },
+                                onSuccess = {
+                                    showReauthDialog = false
+                                    Toast.makeText(
+                                        context,
+                                        "Yêu cầu xóa tài khoản đã được tiếp nhận. Tài khoản đã bị khóa và đăng xuất.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    onSignOut()
+                                },
+                                onError = { err ->
+                                    reauthError = err
+                                }
+                            )
+                        }
+                    ) {
+                        if (viewModel.isDeletingAccount) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Xác thực & Xóa", color = colors.error, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !viewModel.isDeletingAccount,
+                    onClick = { showReauthDialog = false }
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -555,6 +820,8 @@ private fun OptionRow(
     icon: HomeIcon,
     title: String,
     trailingText: String? = null,
+    titleColor: Color? = null,
+    iconColor: Color? = null,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -566,11 +833,11 @@ private fun OptionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        LineIcon(icon, colors.onSurfaceVariant, Modifier.size(20.dp))
+        LineIcon(icon, iconColor ?: colors.onSurfaceVariant, Modifier.size(20.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
-            color = colors.onSurface,
+            color = titleColor ?: colors.onSurface,
             modifier = Modifier.weight(1f)
         )
         if (trailingText != null) {
@@ -579,8 +846,9 @@ private fun OptionRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant
             )
+        } else {
+            LineIcon(HomeIcon.CHEVRON, colors.onSurfaceVariant, Modifier.size(18.dp))
         }
-        LineIcon(HomeIcon.CHEVRON, colors.onSurfaceVariant, Modifier.size(18.dp))
     }
 }
 

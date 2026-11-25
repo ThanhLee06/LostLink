@@ -1,5 +1,6 @@
 package com.example.lostlink.data
 
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -103,6 +104,33 @@ class FirebaseAccountRepository(
             return onComplete(Result.failure(IllegalArgumentException("Vui lòng sử dụng địa chỉ email @ut.edu.vn.")))
         }
         auth.sendPasswordResetEmail(cleanEmail)
+            .addOnSuccessListener { onComplete(Result.success(Unit)) }
+            .addOnFailureListener { error -> onComplete(Result.failure(error)) }
+    }
+
+    fun reauthenticateWithPassword(password: String, onComplete: (Result<Unit>) -> Unit) {
+        val user = auth.currentUser
+        if (user == null) {
+            return onComplete(Result.failure(IllegalStateException("Chưa đăng nhập.")))
+        }
+        val email = user.email.orEmpty()
+        val credential = EmailAuthProvider.getCredential(email, password)
+        user.reauthenticate(credential)
+            .addOnSuccessListener { onComplete(Result.success(Unit)) }
+            .addOnFailureListener { error -> onComplete(Result.failure(error)) }
+    }
+
+    fun isGoogleUser(): Boolean {
+        return auth.currentUser?.providerData?.any { it.providerId == GoogleAuthProvider.PROVIDER_ID } == true
+    }
+
+    fun reauthenticateWithGoogle(idToken: String, onComplete: (Result<Unit>) -> Unit) {
+        val user = auth.currentUser
+        if (user == null) {
+            return onComplete(Result.failure(IllegalStateException("Chưa đăng nhập.")))
+        }
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        user.reauthenticate(credential)
             .addOnSuccessListener { onComplete(Result.success(Unit)) }
             .addOnFailureListener { error -> onComplete(Result.failure(error)) }
     }

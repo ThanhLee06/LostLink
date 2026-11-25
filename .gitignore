@@ -40,6 +40,7 @@ render.experimental.xml
 # Python / Backend virtual env, caches, and secrets
 backend/.venv/
 backend/.env
+*serviceAccountKey*.json
 __pycache__/
 *.py[cod]
 .pytest_cache/

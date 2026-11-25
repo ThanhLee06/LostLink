@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
+import com.example.lostlink.data.BackendApiClient
+import com.example.lostlink.data.BackendApiException
 import com.example.lostlink.data.PostRepository
 import androidx.lifecycle.ViewModel
 import com.example.lostlink.data.FirebaseAccountRepository
@@ -26,10 +28,18 @@ class ProfileViewModel(private val mutations: PostRepository? = null) : ViewMode
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
     private val accounts = FirebaseAccountRepository()
+    private val apiClient by lazy { BackendApiClient(auth = auth) }
     private var identity: String? = null
     private var session = 0L
     private var profileRequest = 0L
     private var closed = false
+
+    var isDeletingAccount by mutableStateOf(false)
+        private set
+
+    fun cancelAccountDeletion() {
+        isDeletingAccount = false
+    }
 
     var state by mutableStateOf(ProfileState())
         private set
@@ -198,6 +208,89 @@ class ProfileViewModel(private val mutations: PostRepository? = null) : ViewMode
 
     fun toggleNotifications() {
         state = state.copy(notificationsEnabled = !state.notificationsEnabled)
+    }
+
+    fun deleteAccount(
+        reason: String? = null,
+        onSuccess: () -> Unit,
+        onRequireReauth: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        if (isDeletingAccount) return
+        isDeletingAccount = true
+        viewModelScope.launch {
+            val result = apiClient.requestAccountDeletion(confirm = true, reason = reason)
+            isDeletingAccount = false
+            result.onSuccess {
+                accounts.signOut()
+                onSuccess()
+            }.onFailure { err ->
+                if (err is BackendApiException && err.code == "RECENT_AUTH_REQUIRED") {
+                    onRequireReauth()
+                } else {
+                    onError(err.message ?: "Không thể khởi tạo yêu cầu xóa tài khoản.")
+                }
+            }
+        }
+    }
+
+    val isGoogleUser: Boolean
+        get() = accounts.isGoogleUser()
+
+    fun reauthenticateAndRetryDeletion(
+        password: String,
+        reason: String? = null,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        if (isDeletingAccount) return
+        isDeletingAccount = true
+        accounts.reauthenticateWithPassword(password) { reauthResult ->
+            if (reauthResult.isFailure) {
+                isDeletingAccount = false
+                val msg = reauthResult.exceptionOrNull()?.message ?: "Mật khẩu không chính xác."
+                onError("Xác thực lại không thành công: $msg")
+                return@reauthenticateWithPassword
+            }
+            viewModelScope.launch {
+                val result = apiClient.requestAccountDeletion(confirm = true, reason = reason)
+                isDeletingAccount = false
+                result.onSuccess {
+                    accounts.signOut()
+                    onSuccess()
+                }.onFailure { err ->
+                    onError(err.message ?: "Không thể khởi tạo yêu cầu xóa tài khoản.")
+                }
+            }
+        }
+    }
+
+    fun reauthenticateWithGoogleAndRetryDeletion(
+        idToken: String,
+        reason: String? = null,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        if (isDeletingAccount) return
+        isDeletingAccount = true
+        accounts.reauthenticateWithGoogle(idToken) { reauthResult ->
+            if (reauthResult.isFailure) {
+                isDeletingAccount = false
+                val msg = reauthResult.exceptionOrNull()?.message ?: "Xác thực Google không thành công."
+                onError("Xác thực lại không thành công: $msg")
+                return@reauthenticateWithGoogle
+            }
+            viewModelScope.launch {
+                val result = apiClient.requestAccountDeletion(confirm = true, reason = reason)
+                isDeletingAccount = false
+                result.onSuccess {
+                    accounts.signOut()
+                    onSuccess()
+                }.onFailure { err ->
+                    onError(err.message ?: "Không thể khởi tạo yêu cầu xóa tài khoản.")
+                }
+            }
+        }
     }
 
     fun toggleAllowEmailContact(onResult: ((Result<Boolean>) -> Unit)? = null) {

@@ -32,3 +32,43 @@ class DeletionRequestResponse(StrictCamelModel):
     steps: Dict[str, Any] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class DeletionRequestStatus(str, Enum):
+    """
+    Lifecycle of deletion_requests/{uid}.
+
+    - LOCKING: account_states is DELETING; posts hiding + session revocation in progress.
+    - QUEUED: lock phase finished; waiting for the cleanup worker (cleanupJob=PENDING).
+    - CLEANING / COMPLETED / FAILED: reserved for the cleanup worker (next task).
+    """
+
+    LOCKING = "LOCKING"
+    QUEUED = "QUEUED"
+    CLEANING = "CLEANING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class DeletionStepStatus(str, Enum):
+    PENDING = "PENDING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
+class AccountDeletionInitRequest(StrictCamelModel):
+    """Body of POST /api/v1/account/deletion — explicit user confirmation is mandatory."""
+
+    confirm: bool = Field(..., description="Must be true to confirm irreversible deletion.")
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class AccountDeletionInitResponse(StrictCamelModel):
+    uid: str = Field(..., min_length=1)
+    account_status: AccountStateStatus
+    request_id: str = Field(..., min_length=1)
+    deletion_status: DeletionRequestStatus
+    created: bool
+    steps: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

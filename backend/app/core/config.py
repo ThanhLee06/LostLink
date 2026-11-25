@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     media_signed_upload_window_seconds: int = Field(default=3600, ge=60)
     run_boot_recovery: bool = True
 
+    # Account deletion: max age (seconds) of `auth_time` for re-authentication
+    account_deletion_recent_auth_seconds: int = Field(default=300, ge=30, le=3600)
+
     @field_validator("app_env", "cloudinary_signature_algorithm", mode="before")
     @classmethod
     def _normalize_lower(cls, value: object) -> object:
