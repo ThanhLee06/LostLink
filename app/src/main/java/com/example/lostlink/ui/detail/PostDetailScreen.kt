@@ -8,18 +8,23 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,9 +37,12 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.lostlink.ui.home.*
-import com.example.lostlink.data.PostRepository
+import androidx.compose.ui.window.DialogProperties
 import com.example.lostlink.data.FirebaseAccountRepository
+import com.example.lostlink.data.PostReportValidator
+import com.example.lostlink.data.PostRepository
+import com.example.lostlink.data.ReportReason
+import com.example.lostlink.ui.home.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -49,10 +57,27 @@ fun PostDetailScreen(
     currentUserId: String? = null,
     onPostChanged: ((postId: String, action: String) -> Unit)? = null,
     onToggleSave: (() -> Unit)? = null,
+    onOpenReport: (() -> Unit)? = null,
+    onDismissReport: (() -> Unit)? = null,
+    onSelectReportReason: ((ReportReason) -> Unit)? = null,
+    onUpdateReportDescription: ((String) -> Unit)? = null,
+    onSubmitReport: (() -> Unit)? = null,
+    onDismissReportNotice: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val activeUserId = currentUserId ?: remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
     val isOwner = state.detail != null && state.detail.post.authorId.isNotBlank() && state.detail.post.authorId == activeUserId
+    val canShowReport = state.canShowReportOption(activeUserId)
+
+    if (state.isReportDialogOpen && canShowReport) {
+        PostReportDialog(
+            state = state,
+            onDismiss = { onDismissReport?.invoke() },
+            onSelectReason = { onSelectReportReason?.invoke(it) },
+            onUpdateDescription = { onUpdateReportDescription?.invoke(it) },
+            onSubmit = { onSubmitReport?.invoke() },
+        )
+    }
 
     Column(Modifier.fillMaxSize().background(colors.background).testTag("post-detail")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -85,7 +110,26 @@ fun PostDetailScreen(
                         modifier = Modifier.size(24.dp),
                     )
                 }
-            } else if (!(isOwner && onEditPost != null && state.detail?.post?.isHidden != true)) {
+            }
+            if (canShowReport && onOpenReport != null) {
+                IconButton(
+                    onClick = onOpenReport,
+                    enabled = !state.isReportPending,
+                    modifier = Modifier
+                        .size(HomeTokens.Target)
+                        .testTag("detail-report-top-button")
+                        .semantics {
+                            contentDescription = if (state.isReported) "Đã báo cáo bài viết" else "Báo cáo bài viết"
+                        },
+                ) {
+                    Icon(
+                        imageVector = if (state.isReported) Icons.Rounded.Flag else Icons.Outlined.Flag,
+                        contentDescription = null,
+                        tint = if (state.isReported) colors.error else colors.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            } else if (onToggleSave == null && !(isOwner && onEditPost != null && state.detail?.post?.isHidden != true)) {
                 Spacer(Modifier.width(HomeTokens.Target))
             }
         }
@@ -97,7 +141,21 @@ fun PostDetailScreen(
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
                     Text("Đang tải bài đăng…", color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
-                DetailStatus.READY -> state.detail?.let { detail -> key(detail.post.id) { DetailContent(detail, activeUserId, onEditPost, onPostChanged, onBack, onRetry) } }
+                DetailStatus.READY -> state.detail?.let { detail ->
+                    key(detail.post.id) {
+                        DetailContent(
+                            detail = detail,
+                            state = state,
+                            currentUserId = activeUserId,
+                            onEditPost = onEditPost,
+                            onPostChanged = onPostChanged,
+                            onBack = onBack,
+                            onRetry = onRetry,
+                            onOpenReport = onOpenReport,
+                            onDismissReportNotice = onDismissReportNotice,
+                        )
+                    }
+                }
                 else -> DetailFailure(state, onBack, onRetry)
             }
         }
@@ -107,15 +165,20 @@ fun PostDetailScreen(
 @Composable
 private fun DetailContent(
     detail: PostDetail,
+    state: PostDetailState,
     currentUserId: String? = null,
     onEditPost: ((HomePost) -> Unit)? = null,
     onPostChanged: ((postId: String, action: String) -> Unit)? = null,
     onBack: () -> Unit = {},
-    onRetry: () -> Unit = {}
+    onRetry: () -> Unit = {},
+    onOpenReport: (() -> Unit)? = null,
+    onDismissReportNotice: (() -> Unit)? = null,
 ) {
     val post = detail.post
     val context = LocalContext.current
     val isAuthor = !currentUserId.isNullOrBlank() && post.authorId.isNotBlank() && currentUserId == post.authorId
+    val canShowReport = state.canShowReportOption(currentUserId)
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 700.dp && LocalDensity.current.fontScale <= 1.3f
         val gutter = if (maxWidth >= 600.dp) 32.dp else HomeTokens.Gutter
@@ -260,8 +323,311 @@ private fun DetailContent(
                     }
                 }
             }
+            // Khu vực Báo cáo bài viết: ẩn hoàn toàn đối với bài đăng của chính bản thân
+            if (canShowReport) {
+                item(key = "report") {
+                    DetailReportSection(
+                        state = state,
+                        onOpenReport = { onOpenReport?.invoke() },
+                        onDismissNotice = { onDismissReportNotice?.invoke() },
+                    )
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun DetailReportSection(
+    state: PostDetailState,
+    onOpenReport: () -> Unit,
+    onDismissNotice: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag("detail-report-section"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (!state.reportNoticeMessage.isNullOrBlank()) {
+            Surface(
+                color = colors.secondaryContainer,
+                shape = HomeTokens.CardShape,
+                border = BorderStroke(1.dp, colors.outlineVariant),
+                modifier = Modifier.fillMaxWidth().testTag("detail-report-notice"),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = state.reportNoticeMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSecondaryContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismissNotice) {
+                        Text("Đóng", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
+        Surface(
+            color = colors.surface,
+            shape = HomeTokens.CardShape,
+            border = BorderStroke(1.dp, colors.outlineVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = if (state.isReported) "Bạn đã báo cáo bài viết này" else "Phát hiện nội dung bất thường?",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (state.isReported) {
+                            "Báo cáo của bạn đã được ghi nhận và đang chờ quản trị viên xem xét."
+                        } else {
+                            "Báo cáo cho quản trị viên nếu bài viết vi phạm quy định hoặc sai sự thật."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onOpenReport,
+                    enabled = !state.isReportPending,
+                    shape = HomeTokens.ImageShape,
+                    border = BorderStroke(
+                        1.dp,
+                        if (state.isReported) colors.outlineVariant else colors.error.copy(alpha = 0.6f),
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (state.isReported) colors.onSurfaceVariant else colors.error,
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 42.dp)
+                        .testTag("btn-report-post"),
+                ) {
+                    Icon(
+                        imageVector = if (state.isReported) Icons.Rounded.Flag else Icons.Outlined.Flag,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (state.isReported) "Đã báo cáo" else "Báo cáo bài viết",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PostReportDialog(
+    state: PostDetailState,
+    onDismiss: () -> Unit,
+    onSelectReason: (ReportReason) -> Unit,
+    onUpdateDescription: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val maxChars = PostReportValidator.MAX_DESCRIPTION_LENGTH
+    val currentChars = state.reportDescriptionLength
+    val isOverLimit = state.isReportDescriptionTooLong
+    val errorText = state.reportValidationError ?: state.reportSubmitError
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!state.isReportPending) onDismiss()
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = !state.isReportPending,
+            dismissOnClickOutside = !state.isReportPending,
+        ),
+        modifier = Modifier.testTag("report-dialog"),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Flag,
+                    contentDescription = null,
+                    tint = colors.error,
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    text = "Báo cáo bài viết",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "Vui lòng chọn lý do báo cáo phù hợp để quản trị viên kiểm tra và xử lý:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReportReason.entries.forEach { reason ->
+                        val selected = state.selectedReportReason == reason
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected) colors.primaryContainer.copy(alpha = 0.45f) else colors.surface,
+                            border = BorderStroke(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) colors.primary else colors.outlineVariant,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("report-reason-${reason.code}")
+                                .clickable(enabled = !state.isReportPending) {
+                                    onSelectReason(reason)
+                                },
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                RadioButton(
+                                    selected = selected,
+                                    onClick = null,
+                                    enabled = !state.isReportPending,
+                                )
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        text = reason.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = colors.onSurface,
+                                    )
+                                    Text(
+                                        text = reason.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = state.reportDescription,
+                        onValueChange = onUpdateDescription,
+                        enabled = !state.isReportPending,
+                        isError = isOverLimit,
+                        label = { Text("Mô tả ngắn (không bắt buộc)") },
+                        placeholder = { Text("Cung cấp thêm chi tiết nếu cần...") },
+                        minLines = 3,
+                        maxLines = 5,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("report-description-input"),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (isOverLimit) "Vượt quá giới hạn ký tự cho phép" else "Tối đa $maxChars ký tự",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isOverLimit) colors.error else colors.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "$currentChars/$maxChars",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isOverLimit) colors.error else colors.onSurfaceVariant,
+                            fontWeight = if (isOverLimit) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.testTag("report-description-counter"),
+                        )
+                    }
+                }
+
+                if (!errorText.isNullOrBlank()) {
+                    Surface(
+                        color = colors.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("report-error-box"),
+                    ) {
+                        Text(
+                            text = errorText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onErrorContainer,
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("report-error-text"),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSubmit,
+                enabled = !state.isReportPending && !isOverLimit,
+                colors = ButtonDefaults.buttonColors(containerColor = colors.error),
+                modifier = Modifier.testTag("report-submit-button"),
+            ) {
+                if (state.isReportPending) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.onError,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Đang gửi...", fontWeight = FontWeight.Bold)
+                } else {
+                    Text("Gửi báo cáo", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !state.isReportPending,
+                modifier = Modifier.testTag("report-cancel-button"),
+            ) {
+                Text("Hủy")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -449,7 +815,7 @@ private fun DetailSummary(
                     if (!isResolvedOrClosed) {
                         OutlinedButton(
                             onClick = { showCloseDialog = true },
-                        enabled = !mutating && !post.isHidden,
+                            enabled = !mutating && !post.isHidden,
                             shape = HomeTokens.ImageShape,
                             modifier = Modifier.weight(1f).heightIn(min = 44.dp)
                         ) {
@@ -462,7 +828,7 @@ private fun DetailSummary(
 
                 TextButton(
                     onClick = { showDeleteDialog = true },
-                        enabled = !mutating,
+                    enabled = !mutating,
                     colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -525,7 +891,14 @@ private fun DetailFailure(state: PostDetailState, onBack: () -> Unit, onRetry: (
         else -> HomeIcon.REFRESH
     }
     val (title, message) = when (state.status) {
-        DetailStatus.NOT_FOUND -> "Không tìm thấy bài đăng" to "Bài đăng không tồn tại hoặc đã được xóa. Bạn có thể quay lại để xem tin khác."
+        DetailStatus.NOT_FOUND -> {
+            val customMsg = state.unavailableMessage?.takeIf { it.isNotBlank() }
+            if (customMsg != null) {
+                "Bài đăng không còn khả dụng" to customMsg
+            } else {
+                "Không tìm thấy bài đăng" to "Bài đăng không tồn tại hoặc đã được xóa. Bạn có thể quay lại để xem tin khác."
+            }
+        }
         DetailStatus.ACCESS_DENIED -> "Chưa thể xem bài đăng" to "Tài khoản hiện tại không có quyền đọc tin này. Hãy quay lại để kiểm tra tài khoản."
         DetailStatus.NETWORK_ERROR -> "Chưa kết nối được" to "Không tải được bài đăng. Kiểm tra kết nối mạng rồi thử lại."
         DetailStatus.INVALID_ID -> "Mã bài đăng không hợp lệ" to "Hãy quay lại trang chủ và chọn bài đăng khác."
@@ -540,7 +913,7 @@ private fun DetailFailure(state: PostDetailState, onBack: () -> Unit, onRetry: (
             item { Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center, modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite }) }
             item { Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center) }
+                textAlign = TextAlign.Center, modifier = Modifier.testTag("detail-error-message")) }
             if (state.canRetry) item { Button(onClick = onRetry, shape = HomeTokens.ImageShape,
                 modifier = Modifier.fillMaxWidth().heightIn(min = HomeTokens.Target)) { Text("Thử lại") } }
             item { TextButton(onClick = onBack, modifier = Modifier.heightIn(min = HomeTokens.Target)) { Text("Về trang chủ") } }

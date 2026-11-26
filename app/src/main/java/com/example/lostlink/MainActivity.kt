@@ -139,6 +139,10 @@ class MainActivity : ComponentActivity() {
                                             detailModel.retry()
                                         }
                                         model.refreshAfterPostModified()
+                                    },
+                                    onPostUnavailable = { unavailablePostId ->
+                                        model.removePost(unavailablePostId)
+                                        model.refreshAfterPostModified()
                                     }
                                 )
                             })

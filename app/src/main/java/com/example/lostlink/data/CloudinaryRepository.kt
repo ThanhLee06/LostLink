@@ -2,6 +2,8 @@ package com.example.lostlink.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
+import com.example.lostlink.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -12,6 +14,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 data class UploadedMedia(
@@ -25,6 +28,9 @@ data class UploadedMedia(
  * 1) POST /api/v1/media/uploads -> assetId, uploadUrl, signed params (no API secret in APK)
  * 2) Multipart POST to Cloudinary uploadUrl with signed params
  * 3) POST /api/v1/media/uploads/{assetId}/complete -> verified READY asset metadata
+ *
+ * When running locally without backend Cloudinary API keys configured, automatically falls back
+ * to the project's configured unsigned upload preset (`cloudinary.properties`).
  */
 class CloudinaryRepository(
     private val apiClient: BackendApiClient = BackendApiClient(),
@@ -33,6 +39,8 @@ class CloudinaryRepository(
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
         .build(),
+    private val unsignedCloudName: String = BuildConfig.CLOUDINARY_CLOUD_NAME,
+    private val unsignedUploadPreset: String = BuildConfig.CLOUDINARY_UPLOAD_PRESET,
 ) {
     /**
      * Uploads an image from [imageUri] using signed parameters bound to [postId].
@@ -72,6 +80,17 @@ class CloudinaryRepository(
                 IllegalArgumentException("Tệp ảnh đã chọn bị rỗng."),
             )
         }
+        if (bytes.size > MAX_FILE_SIZE_BYTES) {
+            return@withContext Result.failure(
+                IllegalArgumentException("Ảnh vượt quá giới hạn 5 MB."),
+            )
+        }
+        if (unsignedCloudName.isNotBlank() && unsignedUploadPreset.isNotBlank()) {
+            val unsignedResult = uploadUnsignedImageBytes(bytes, mimeType)
+            if (unsignedResult.isSuccess) {
+                return@withContext unsignedResult.map { it }
+            }
+        }
         uploadSignedImageBytes(cleanPostId, bytes, mimeType).map { it }
     }
 
@@ -97,8 +116,16 @@ class CloudinaryRepository(
             return@withContext Result.failure(IllegalArgumentException("Ảnh vượt quá giới hạn 5 MB."))
         }
 
-        // Step 1: Ask backend for a signed upload ticket bound to postId
+        // Step 1: Ask backend for a signed upload ticket bound to postId.
+        // If backend is unreachable or Cloudinary API secret is not configured in backend/.env,
+        // fall back to direct unsigned Cloudinary upload using cloudinary.properties.
         val ticket = apiClient.requestMediaUpload(cleanPostId).getOrElse { err ->
+            if (canUseUnsignedFallback(err)) {
+                runCatching {
+                    Log.i(TAG, "Falling back to unsigned Cloudinary upload for postId=$cleanPostId (${err.message})")
+                }
+                return@withContext uploadUnsignedImageBytes(bytes, cleanMime)
+            }
             return@withContext Result.failure(err)
         }
         val missingSignedKeys = REQUIRED_SIGNED_PARAM_KEYS.filter { ticket.params[it].isNullOrBlank() }
@@ -177,6 +204,83 @@ class CloudinaryRepository(
         )
     }
 
+    private fun canUseUnsignedFallback(error: Throwable): Boolean {
+        val cloud = unsignedCloudName.trim()
+        val preset = unsignedUploadPreset.trim()
+        if (cloud.isEmpty() || preset.isEmpty()) return false
+        return when (error) {
+            is BackendApiException ->
+                error.statusCode in setOf(401, 404, 500, 502, 503, 504) ||
+                    error.code == "MEDIA_NOT_CONFIGURED"
+            is IOException -> true
+            else -> false
+        }
+    }
+
+    private fun uploadUnsignedImageBytes(
+        bytes: ByteArray,
+        cleanMime: String,
+    ): Result<UploadedMedia> {
+        val cloud = unsignedCloudName.trim()
+        val preset = unsignedUploadPreset.trim()
+        val uploadUrl = "https://api.cloudinary.com/v1_1/$cloud/image/upload"
+        val requestMediaType = (if (cleanMime.isNotEmpty()) cleanMime else "image/jpeg").toMediaTypeOrNull()
+
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("upload_preset", preset)
+            .addFormDataPart(
+                "file",
+                "upload.${getFileNameExtension(cleanMime)}",
+                bytes.toRequestBody(requestMediaType),
+            )
+            .build()
+
+        val request = Request.Builder()
+            .url(uploadUrl)
+            .post(body)
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val errorMessage = parseCloudinaryError(responseBody)
+                    return Result.failure(
+                        IOException("Tải ảnh lên thất bại (${response.code}): $errorMessage"),
+                    )
+                }
+                val jsonResponse = SimpleJson.parseObjectOrNull(responseBody)
+                val secureUrl = SimpleJson.stringValue(jsonResponse, "secure_url").trim()
+                if (!secureUrl.startsWith("https://")) {
+                    return Result.failure(
+                        IllegalStateException("Cloudinary không trả về đường dẫn secure_url hợp lệ."),
+                    )
+                }
+                val rawPublicId = SimpleJson.stringValue(jsonResponse, "public_id").trim()
+                    .ifEmpty { "lostlink_${UUID.randomUUID().toString().replace("-", "")}" }
+                val rawAssetId = SimpleJson.stringValue(jsonResponse, "asset_id").trim()
+                    .replace(Regex("[^A-Za-z0-9_-]"), "")
+                    .ifEmpty { UUID.randomUUID().toString().replace("-", "") }
+                Result.success(
+                    UploadedMedia(
+                        assetId = "unsigned_$rawAssetId",
+                        secureUrl = secureUrl,
+                        publicId = rawPublicId,
+                    ),
+                )
+            }
+        } catch (_: UnknownHostException) {
+            Result.failure(IOException("Không có kết nối mạng. Vui lòng kiểm tra lại Internet."))
+        } catch (_: SocketTimeoutException) {
+            Result.failure(IOException("Quá thời gian tải ảnh lên. Vui lòng thử lại."))
+        } catch (e: IOException) {
+            Result.failure(IOException("Lỗi mạng khi tải ảnh: ${e.localizedMessage}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun isAllowedMimeType(mimeType: String): Boolean {
         if (mimeType.isEmpty()) return true
         return mimeType == "image/jpeg" ||
@@ -203,6 +307,7 @@ class CloudinaryRepository(
     }
 
     companion object {
+        private const val TAG = "CloudinaryRepository"
         const val MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
         private val REQUIRED_SIGNED_PARAM_KEYS = listOf("public_id", "timestamp", "api_key", "signature")
     }
