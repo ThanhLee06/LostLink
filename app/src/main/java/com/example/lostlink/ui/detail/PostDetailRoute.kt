@@ -1,4 +1,3 @@
-
 package com.example.lostlink.ui.detail
 
 import android.widget.Toast
@@ -14,7 +13,8 @@ fun PostDetailRoute(
     onBack: () -> Unit,
     onEditPost: ((HomePost) -> Unit)? = null,
     currentUserId: String? = null,
-    onPostChanged: ((postId: String, action: String) -> Unit)? = null
+    onPostChanged: ((postId: String, action: String) -> Unit)? = null,
+    onPostUnavailable: ((postId: String) -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
 
@@ -47,6 +47,31 @@ fun PostDetailRoute(
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             }
         },
+        onOpenReport = {
+            model.openReportDialog { alreadyMsg ->
+                Toast.makeText(context, alreadyMsg, Toast.LENGTH_SHORT).show()
+            }
+        },
+        onDismissReport = model::dismissReportDialog,
+        onSelectReportReason = model::selectReportReason,
+        onUpdateReportDescription = model::updateReportDescription,
+        onSubmitReport = {
+            model.submitReport(
+                onSuccess = { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                },
+                onAlreadyReported = { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                },
+                onPostUnavailable = { unavailableId, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    onPostUnavailable?.invoke(unavailableId)
+                },
+                onError = { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                },
+            )
+        },
+        onDismissReportNotice = model::dismissReportNotice,
     )
 }
-

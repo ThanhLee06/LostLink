@@ -13,6 +13,7 @@ interface MyPostsDataSource {
     fun observeMyPosts(authorId: String): Flow<List<HomePost>>
     suspend fun updatePostStatus(postId: String, newStatus: String): Result<Unit>
     suspend fun deletePost(postId: String): Result<Unit>
+    suspend fun readModerationReason(authorId: String, postId: String): String? = null
 }
 
 class MyPostsRepository(
@@ -62,5 +63,9 @@ class MyPostsRepository(
     override suspend fun deletePost(postId: String): Result<Unit> = runCatching {
         mutations.deletePost(currentUid(), postId)
         Unit
+    }
+
+    override suspend fun readModerationReason(authorId: String, postId: String): String? {
+        return mutations.readPostModeration(authorId, postId)?.reason
     }
 }

@@ -58,6 +58,7 @@ data class ProfileState(
     val error: String? = null,
     val profile: UserProfile = UserProfile(),
     val userPosts: List<HomePost> = emptyList(),
+    val moderationReasons: Map<String, String> = emptyMap(),
     val selectedTab: ProfilePostTab = ProfilePostTab.OPEN,
     val notificationsEnabled: Boolean = true,
     val isSavingName: Boolean = false,

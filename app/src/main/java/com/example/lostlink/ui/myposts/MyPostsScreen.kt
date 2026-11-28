@@ -501,11 +501,12 @@ fun MyPostsScreen(
                             ) { post ->
                                 MyPostCard(
                                     post = post,
+                                    moderationReason = state.moderationReasons[post.id],
                                     onClick = { onPostClick(post.id) },
                                     onEditClick = { if (!post.isHidden) onEditPostClick?.invoke(post) },
 
                                     onToggleStatus = {
-                                        if (!state.actionLoading) {
+                                        if (!state.actionLoading && !post.isHidden) {
                                             val isResolved =
                                                 post.status.equals("RESOLVED", ignoreCase = true) ||
                                                         post.status.equals("CLOSED", ignoreCase = true)
@@ -520,7 +521,7 @@ fun MyPostsScreen(
                                         }
                                     },
                                     onCloseClick = {
-                                        postToClose = post
+                                        if (!post.isHidden) postToClose = post
                                     },
                                     onDeleteClick = {
                                         postToDelete = post
@@ -544,10 +545,12 @@ internal fun MyPostCard(
     onToggleStatus: () -> Unit,
     onCloseClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    moderationReason: String? = null,
 ) {
     val isResolved = post.status.equals("RESOLVED", ignoreCase = true) ||
             post.status.equals("CLOSED", ignoreCase = true)
+    val isHidden = post.isHidden
 
     Card(
         modifier = modifier
@@ -628,11 +631,14 @@ internal fun MyPostCard(
                             )
                         }
 
-                        // Nhãn trạng thái
+                        // Nhãn trạng thái (ưu tiên cảnh báo Đã bị ẩn khi Admin ẩn bài từ báo cáo)
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = if (isResolved) MaterialTheme.colorScheme.surfaceVariant
-                            else Color(0xFFE8F0FE)
+                            color = when {
+                                isHidden -> Color(0xFFFCE8E6)
+                                isResolved -> MaterialTheme.colorScheme.surfaceVariant
+                                else -> Color(0xFFE8F0FE)
+                            }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -643,16 +649,27 @@ internal fun MyPostCard(
                                         .size(6.dp)
                                         .clip(CircleShape)
                                         .background(
-                                            if (isResolved) Color(0xFF5F6368)
-                                            else Color(0xFF1A73E8)
+                                            when {
+                                                isHidden -> Color(0xFFC5221F)
+                                                isResolved -> Color(0xFF5F6368)
+                                                else -> Color(0xFF1A73E8)
+                                            }
                                         )
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
-                                    text = if (isResolved) "Đã giải quyết" else "Đang mở",
+                                    text = when {
+                                        isHidden -> "Đang bị ẩn"
+                                        isResolved -> "Đã giải quyết"
+                                        else -> "Đang mở"
+                                    },
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (isResolved) Color(0xFF5F6368) else Color(0xFF1A73E8)
+                                    color = when {
+                                        isHidden -> Color(0xFFC5221F)
+                                        isResolved -> Color(0xFF5F6368)
+                                        else -> Color(0xFF1A73E8)
+                                    }
                                 )
                             }
                         }
@@ -712,7 +729,41 @@ internal fun MyPostCard(
             )
             Spacer(Modifier.height(8.dp))
 
-            if (!isResolved) {
+            if (isHidden) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp).padding(top = 2.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Tin đã bị ẩn bởi Quản trị viên",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Text(
+                                text = "Lý do: ${moderationReason?.takeIf { it.isNotBlank() } ?: "Người quản trị đã ẩn bài đăng này từ báo cáo vi phạm. Bạn không thể tự khôi phục hiển thị."}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isResolved && !isHidden) {
                 TextButton(
                     onClick = onCloseClick,
                     modifier = Modifier.fillMaxWidth()
@@ -732,54 +783,61 @@ internal fun MyPostCard(
                 }
             }
 
-
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (!isHidden) {
+                    TextButton(
+                        onClick = onToggleStatus,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            if (isResolved) Icons.Outlined.Replay else Icons.Outlined.TaskAlt,
+                            contentDescription = null,
+                            tint = if (isResolved) MaterialTheme.colorScheme.primary else Color(0xFF137333),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
 
-                TextButton(
-                    onClick = onToggleStatus,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Icon(
-                        if (isResolved) Icons.Outlined.Replay else Icons.Outlined.TaskAlt,
-                        contentDescription = null,
-                        tint = if (isResolved) MaterialTheme.colorScheme.primary else Color(0xFF137333),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-
+                        Text(
+                            text = when {
+                                isResolved -> "Mở lại bài đăng"
+                                post.isLost -> "Đã tìm thấy đồ"
+                                else -> "Đã trao trả cho người mất"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isResolved) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color(0xFF137333)
+                            }
+                        )
+                    }
+                } else {
                     Text(
-                        text = when {
-                            isResolved -> "Mở lại bài đăng"
-                            post.isLost -> "Đã tìm thấy đồ"
-                            else -> "Đã trao trả cho người mất"
-                        },
+                        text = "Không thể tự khôi phục hiển thị",
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (isResolved) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            Color(0xFF137333)
-                        }
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
                     )
-
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onEditClick,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.Edit,
-                            contentDescription = "Chỉnh sửa bài đăng",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    if (!isHidden) {
+                        IconButton(
+                            onClick = onEditClick,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Edit,
+                                contentDescription = "Chỉnh sửa bài đăng",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                     IconButton(
                         onClick = onDeleteClick,
