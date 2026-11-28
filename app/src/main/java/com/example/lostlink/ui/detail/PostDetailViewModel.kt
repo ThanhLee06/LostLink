@@ -11,10 +11,12 @@ import com.example.lostlink.data.PostReportValidator
 import com.example.lostlink.data.PostUnavailableForReportException
 import com.example.lostlink.data.ReportInProgressException
 import com.example.lostlink.data.ReportReason
+import com.example.lostlink.data.ReportStatus
 import com.example.lostlink.data.ReportValidationException
 import com.example.lostlink.data.SaveInProgressException
 import com.example.lostlink.data.SavedPostsRepository
 import com.example.lostlink.data.SelfReportNotAllowedException
+import com.example.lostlink.data.UserReportInfo
 import kotlinx.coroutines.launch
 
 enum class DetailStatus { IDLE, LOADING, READY, NOT_FOUND, ACCESS_DENIED, NETWORK_ERROR, INVALID_ID, INVALID_DATA, ERROR }
@@ -26,6 +28,7 @@ data class PostDetailState(
     val isSaved: Boolean = false,
     val isSavePending: Boolean = false,
     val isReported: Boolean = false,
+    val reportInfo: UserReportInfo? = null,
     val isReportPending: Boolean = false,
     val isReportDialogOpen: Boolean = false,
     val selectedReportReason: ReportReason? = null,
@@ -82,6 +85,7 @@ class PostDetailViewModel(
                 isSaved = id != null && id in savedPosts.savedPostIds.value,
                 isSavePending = id != null && id in savedPosts.pendingPostIds.value,
                 isReported = id != null && id in reports.reportedPostIds.value,
+                reportInfo = id?.let { reports.userReports.value[it] },
                 isReportPending = id != null && id in reports.pendingPostIds.value,
             )
             if (id != null) open(id)
@@ -110,6 +114,17 @@ class PostDetailViewModel(
                 val currentId = state.id
                 if (!closed && currentId != null) {
                     state = state.copy(isReported = currentId in ids)
+                }
+            }
+        }
+        viewModelScope.launch {
+            reports.userReports.collect { map ->
+                val currentId = state.id
+                if (!closed && currentId != null) {
+                    state = state.copy(
+                        reportInfo = map[currentId],
+                        isReported = (currentId in reports.reportedPostIds.value) || (currentId in map),
+                    )
                 }
             }
         }
@@ -145,6 +160,7 @@ class PostDetailViewModel(
             isSaved = id in savedPosts.savedPostIds.value,
             isSavePending = id in savedPosts.pendingPostIds.value,
             isReported = id in reports.reportedPostIds.value,
+            reportInfo = reports.userReports.value[id],
             isReportPending = id in reports.pendingPostIds.value,
         )
 
@@ -156,6 +172,7 @@ class PostDetailViewModel(
                 val saved = id in savedPosts.savedPostIds.value
                 val pending = id in savedPosts.pendingPostIds.value
                 val reported = id in reports.reportedPostIds.value
+                val reportInfo = reports.userReports.value[id]
                 val reportPending = id in reports.pendingPostIds.value
                 state = when {
                     detail == null -> PostDetailState(
@@ -164,6 +181,7 @@ class PostDetailViewModel(
                         isSaved = saved,
                         isSavePending = pending,
                         isReported = reported,
+                        reportInfo = reportInfo,
                         isReportPending = reportPending,
                     )
                     detail.post.id != id -> PostDetailState(
@@ -172,6 +190,7 @@ class PostDetailViewModel(
                         isSaved = saved,
                         isSavePending = pending,
                         isReported = reported,
+                        reportInfo = reportInfo,
                         isReportPending = reportPending,
                     )
                     else -> PostDetailState(
@@ -181,6 +200,7 @@ class PostDetailViewModel(
                         isSaved = saved,
                         isSavePending = pending,
                         isReported = reported,
+                        reportInfo = reportInfo,
                         isReportPending = reportPending,
                     )
                 }
@@ -188,9 +208,9 @@ class PostDetailViewModel(
                     detail.post.authorId.isNotBlank() && detail.post.authorId != account
                 ) {
                     viewModelScope.launch {
-                        reports.checkAlreadyReported(id).onSuccess { alreadyReported ->
-                            if (!closed && state.id == id && session == accountSession && alreadyReported) {
-                                state = state.copy(isReported = true)
+                        reports.fetchUserReport(id).onSuccess { fetchedInfo ->
+                            if (!closed && state.id == id && session == accountSession && fetchedInfo != null) {
+                                state = state.copy(isReported = true, reportInfo = fetchedInfo)
                             }
                         }
                     }

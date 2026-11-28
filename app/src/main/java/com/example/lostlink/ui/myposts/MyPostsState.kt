@@ -11,6 +11,7 @@ data class MyPostsState(
     val loading: Boolean = true,
     val error: String? = null,
     val posts: List<HomePost> = emptyList(),
+    val moderationReasons: Map<String, String> = emptyMap(),
     val selectedTab: MyPostsTab = MyPostsTab.OPEN,
     val actionLoading: Boolean = false,
     val userMessage: String? = null

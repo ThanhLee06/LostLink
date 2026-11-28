@@ -52,10 +52,30 @@ enum class ReportReason(
     }
 }
 
-enum class ReportStatus(val code: String) {
-    PENDING("PENDING"),
-    RESOLVED_HIDDEN("RESOLVED_HIDDEN"),
-    REJECTED("REJECTED"),
+enum class ReportStatus(val code: String, val label: String) {
+    PENDING("PENDING", "Đang chờ duyệt"),
+    RESOLVED_HIDDEN("RESOLVED_HIDDEN", "Đã xử lý (Đã ẩn bài viết)"),
+    REJECTED("REJECTED", "Đã xử lý (Từ chối báo cáo)");
+
+    val isProcessed: Boolean get() = this != PENDING
+
+    companion object {
+        fun fromCode(code: String?): ReportStatus {
+            val normalized = code?.trim()?.uppercase() ?: return PENDING
+            return entries.firstOrNull { it.code == normalized } ?: PENDING
+        }
+    }
+}
+
+data class UserReportInfo(
+    val postId: String,
+    val reporterUid: String,
+    val reason: ReportReason? = null,
+    val description: String? = null,
+    val status: ReportStatus = ReportStatus.PENDING,
+    val publicNote: String? = null,
+) {
+    val statusBadgeText: String get() = status.label
 }
 
 data class ReportValidationResult(
@@ -155,6 +175,19 @@ class ReportValidationException(message: String) : IllegalArgumentException(mess
 
 interface PostReportBackend {
     suspend fun hasUserReportedPost(uid: String, postId: String): Result<Boolean>
+    suspend fun getUserReport(uid: String, postId: String): Result<UserReportInfo?> {
+        return hasUserReportedPost(uid, postId).map { exists ->
+            if (exists) {
+                UserReportInfo(
+                    postId = postId,
+                    reporterUid = uid,
+                    status = ReportStatus.PENDING,
+                )
+            } else {
+                null
+            }
+        }
+    }
     suspend fun checkPostReportable(uid: String, postId: String): Result<Unit>
     suspend fun createReport(
         uid: String,
@@ -172,12 +205,27 @@ class FirestorePostReportBackend(
     private val auth by lazy(authProvider)
 
     override suspend fun hasUserReportedPost(uid: String, postId: String): Result<Boolean> {
+        return getUserReport(uid, postId).map { it != null }
+    }
+
+    override suspend fun getUserReport(uid: String, postId: String): Result<UserReportInfo?> {
         val reportId = PostReportValidator.buildReportId(postId, uid)
         return try {
             val snap = withTimeout(TIMEOUT_MS) {
                 firestore.collection("reports").document(reportId).get(Source.SERVER).await()
             }
-            Result.success(snap.exists())
+            if (!snap.exists()) {
+                return Result.success(null)
+            }
+            val info = UserReportInfo(
+                postId = snap.getString("postId")?.trim().takeUnless { it.isNullOrEmpty() } ?: postId.trim(),
+                reporterUid = snap.getString("reporterUid")?.trim().takeUnless { it.isNullOrEmpty() } ?: uid.trim(),
+                reason = ReportReason.fromCode(snap.getString("reason")),
+                description = snap.getString("description")?.trim()?.takeIf { it.isNotEmpty() },
+                status = ReportStatus.fromCode(snap.getString("status")),
+                publicNote = snap.getString("publicNote")?.trim()?.takeIf { it.isNotEmpty() },
+            )
+            Result.success(info)
         } catch (e: CancellationException) {
             if (e is TimeoutCancellationException) {
                 Result.failure(IllegalStateException("Kiểm tra trạng thái báo cáo quá thời gian chờ. Vui lòng thử lại.", e))
@@ -189,9 +237,9 @@ class FirestorePostReportBackend(
             // If rules on a remote environment deny GET when resource == null, PERMISSION_DENIED on own reportId
             // while authenticated means the report document does not exist yet.
             if (code == FirebaseFirestoreException.Code.PERMISSION_DENIED && isCurrentUserVerified(uid)) {
-                return Result.success(false)
+                return Result.success(null)
             }
-            logFirestoreError("hasUserReportedPost", "reports/$reportId", uid, postId, e)
+            logFirestoreError("getUserReport", "reports/$reportId", uid, postId, e)
             Result.failure(
                 IllegalStateException(
                     FirestoreSavedPostsBackend.mapFirestoreError(e, "Không thể kiểm tra lịch sử báo cáo."),
@@ -339,6 +387,9 @@ class PostReportRepository(
     private val _reportedPostIds = MutableStateFlow<Set<String>>(emptySet())
     val reportedPostIds: StateFlow<Set<String>> = _reportedPostIds.asStateFlow()
 
+    private val _userReports = MutableStateFlow<Map<String, UserReportInfo>>(emptyMap())
+    val userReports: StateFlow<Map<String, UserReportInfo>> = _userReports.asStateFlow()
+
     private val _pendingPostIds = MutableStateFlow<Set<String>>(emptySet())
     val pendingPostIds: StateFlow<Set<String>> = _pendingPostIds.asStateFlow()
 
@@ -348,11 +399,12 @@ class PostReportRepository(
             if (normalized == boundUid) return
             boundUid = normalized
             _reportedPostIds.value = emptySet()
+            _userReports.value = emptyMap()
             _pendingPostIds.value = emptySet()
         }
     }
 
-    suspend fun checkAlreadyReported(postId: String): Result<Boolean> {
+    suspend fun fetchUserReport(postId: String): Result<UserReportInfo?> {
         val cleanId = postId.trim()
         if (cleanId.isBlank()) {
             return Result.failure(IllegalArgumentException("Mã bài đăng không hợp lệ."))
@@ -361,15 +413,16 @@ class PostReportRepository(
             ?: return Result.failure(SecurityException("Vui lòng đăng nhập bằng tài khoản UTH đã xác minh."))
 
         bindUser(uid)
-        if (cleanId in _reportedPostIds.value) {
-            return Result.success(true)
-        }
-
-        return backend.hasUserReportedPost(uid, cleanId).onSuccess { reported ->
-            if (reported && isStillBound(uid)) {
+        return backend.getUserReport(uid, cleanId).onSuccess { reportInfo ->
+            if (reportInfo != null && isStillBound(uid)) {
                 _reportedPostIds.update { it + cleanId }
+                _userReports.update { it + (cleanId to reportInfo) }
             }
         }
+    }
+
+    suspend fun checkAlreadyReported(postId: String): Result<Boolean> {
+        return fetchUserReport(postId).map { it != null }
     }
 
     suspend fun submitReport(
@@ -409,13 +462,14 @@ class PostReportRepository(
         }
 
         return try {
-            // 1. Check if the user already reported this post before
-            val alreadyReported = backend.hasUserReportedPost(uid, cleanId).getOrElse { err ->
+            // 1. Check if the user already reported this post before (including processed status)
+            val existingReport = backend.getUserReport(uid, cleanId).getOrElse { err ->
                 return Result.failure(err)
             }
-            if (alreadyReported) {
+            if (existingReport != null) {
                 if (isStillBound(uid)) {
                     _reportedPostIds.update { it + cleanId }
+                    _userReports.update { it + (cleanId to existingReport) }
                 }
                 return Result.failure(AlreadyReportedException())
             }
@@ -434,7 +488,15 @@ class PostReportRepository(
             ).fold(
                 onSuccess = {
                     if (isStillBound(uid)) {
+                        val createdInfo = UserReportInfo(
+                            postId = cleanId,
+                            reporterUid = uid,
+                            reason = validReason,
+                            description = normalizedDescription,
+                            status = ReportStatus.PENDING,
+                        )
                         _reportedPostIds.update { it + cleanId }
+                        _userReports.update { it + (cleanId to createdInfo) }
                     }
                     Result.success(Unit)
                 },

@@ -151,6 +151,23 @@ class ProfileViewModel(private val mutations: PostRepository? = null) : ViewMode
                     profile = profile,
                     userPosts = posts
                 )
+
+                val hiddenIds = posts.filter { it.isHidden }.map { it.id }
+                val repo = mutations
+                if (hiddenIds.isNotEmpty() && repo != null) {
+                    viewModelScope.launch {
+                        val fetched = mutableMapOf<String, String>()
+                        for (postId in hiddenIds) {
+                            val reason = repo.readPostModeration(uid, postId)?.reason?.trim()
+                            if (!reason.isNullOrEmpty()) {
+                                fetched[postId] = reason
+                            }
+                        }
+                        if (isCurrentSession(uid, accountSession) && request == profileRequest && fetched.isNotEmpty()) {
+                            state = state.copy(moderationReasons = state.moderationReasons + fetched)
+                        }
+                    }
+                }
             }
             .addOnFailureListener {
                 if (!isCurrentSession(uid, accountSession) || request != profileRequest) return@addOnFailureListener
@@ -167,6 +184,12 @@ class ProfileViewModel(private val mutations: PostRepository? = null) : ViewMode
     }
 
     fun markStatus(post: HomePost, newStatus: String, onDone: ((Result<Unit>) -> Unit)? = null) {
+        if (post.isHidden) {
+            val err = IllegalStateException("Bài đăng đang bị ẩn bởi quản trị viên nên không thể tự khôi phục hoặc đổi trạng thái.")
+            state = state.copy(error = err.message)
+            onDone?.invoke(Result.failure(err))
+            return
+        }
         mutate({ repo, uid -> repo.updatePostStatus(uid, post.id, newStatus) }, {
             state = state.copy(userPosts = state.userPosts.map {
                 if (it.id == post.id) it.copy(status = newStatus) else it

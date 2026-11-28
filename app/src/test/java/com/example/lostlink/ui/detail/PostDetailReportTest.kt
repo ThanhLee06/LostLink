@@ -7,12 +7,14 @@ import com.example.lostlink.data.PostReportValidator
 import com.example.lostlink.data.PostUnavailableForReportException
 import com.example.lostlink.data.ReportInProgressException
 import com.example.lostlink.data.ReportReason
+import com.example.lostlink.data.ReportStatus
 import com.example.lostlink.data.SavedPostEntry
 import com.example.lostlink.data.SavedPostResolution
 import com.example.lostlink.data.SavedPostsBackend
 import com.example.lostlink.data.SavedPostsRepository
 import com.example.lostlink.data.SelfReportNotAllowedException
 import com.example.lostlink.data.UnavailablePostReason
+import com.example.lostlink.data.UserReportInfo
 import com.example.lostlink.ui.home.HomePost
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +81,8 @@ private class FakePostReportBackend : PostReportBackend {
         val reporterUid: String,
         val reason: ReportReason,
         val description: String?,
+        val status: ReportStatus = ReportStatus.PENDING,
+        val publicNote: String? = null,
     )
 
     val posts: MutableMap<String, HomePost> = mutableMapOf()
@@ -89,6 +93,21 @@ private class FakePostReportBackend : PostReportBackend {
     override suspend fun hasUserReportedPost(uid: String, postId: String): Result<Boolean> {
         val docId = PostReportValidator.buildReportId(postId, uid)
         return Result.success(docId in reportsByDocId)
+    }
+
+    override suspend fun getUserReport(uid: String, postId: String): Result<UserReportInfo?> {
+        val docId = PostReportValidator.buildReportId(postId, uid)
+        val stored = reportsByDocId[docId] ?: return Result.success(null)
+        return Result.success(
+            UserReportInfo(
+                postId = stored.postId,
+                reporterUid = stored.reporterUid,
+                reason = stored.reason,
+                description = stored.description,
+                status = stored.status,
+                publicNote = stored.publicNote,
+            )
+        )
     }
 
     override suspend fun checkPostReportable(uid: String, postId: String): Result<Unit> {
@@ -190,11 +209,18 @@ class PostDetailReportTest {
             description = "  Sai địa điểm nhặt đồ  ",
             createdAtMarker = "SERVER_TIMESTAMP",
         )
+        assertEquals("post-1_student-2", PostReportValidator.buildReportId("post-1", "student-2"))
+        assertEquals("post-1_student-2", PostReportValidator.buildReportId("  post-1  ", "  student-2  "))
+        assertEquals(
+            setOf("postId", "reporterUid", "reason", "description", "status", "createdAt"),
+            payload.keys,
+        )
         assertEquals("post-1", payload["postId"])
         assertEquals("student-2", payload["reporterUid"])
         assertEquals("WRONG_INFO", payload["reason"])
         assertEquals("Sai địa điểm nhặt đồ", payload["description"])
         assertEquals("PENDING", payload["status"])
+        assertEquals("SERVER_TIMESTAMP", payload["createdAt"])
         assertFalse("publicNote" in payload)
     }
 
@@ -368,5 +394,40 @@ class PostDetailReportTest {
         assertEquals(DetailStatus.NOT_FOUND, vm.state.status)
         assertFalse(vm.state.isReportDialogOpen)
         assertEquals(unavailableMsg, vm.state.unavailableMessage)
+    }
+
+    @Test
+    fun st49_reporterReceivesAccuratePendingAndAdminProcessedReportStatus() = runTest(testDispatcher) {
+        val post = samplePost(id = "post-1", authorId = "student-1")
+        val detailSource = FakePostDetailSource(activeUserId = "student-2").apply {
+            posts["post-1"] = PostDetail(post = post, category = "Thẻ sinh viên")
+        }
+        val reportBackend = FakePostReportBackend().apply {
+            posts["post-1"] = post
+            reportsByDocId["post-1_student-2"] = FakePostReportBackend.StoredReport(
+                postId = "post-1",
+                reporterUid = "student-2",
+                reason = ReportReason.SPAM,
+                description = "Tin spam",
+                status = ReportStatus.REJECTED,
+                publicNote = "Đã xác minh bài viết hợp lệ.",
+            )
+        }
+        val vm = PostDetailViewModel(
+            source = detailSource,
+            savedPosts = SavedPostsRepository(NoOpSavedPostsBackend(), { "student-2" }),
+            reports = PostReportRepository(reportBackend, { "student-2" }),
+        )
+
+        vm.open("post-1")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.state.isReported)
+        val info = vm.state.reportInfo
+        assertNotNull(info)
+        assertEquals(ReportStatus.REJECTED, info!!.status)
+        assertTrue(info.status.isProcessed)
+        assertEquals(ReportReason.SPAM, info.reason)
+        assertEquals("Đã xác minh bài viết hợp lệ.", info.publicNote)
     }
 }

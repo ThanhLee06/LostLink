@@ -146,4 +146,33 @@ class PostRepositoryEmulatorTest {
         val error = failure { firestore.collection("posts").document(draft.clientPostId).update("title", "Tampered").await() }
         assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, (error as FirebaseFirestoreException).code)
     }
+
+    @Test fun verifiedStudentCanReportAnotherUsersPostAndDuplicateIsRejectedByRules() = runBlocking {
+        val draft = draft()
+        repository.createPost(uid, draft.clientPostId, draft, null)
+        val reporterUid = createStudent(verified = true)
+        val reportId = "${draft.clientPostId}_$reporterUid"
+        val reportRef = firestore.collection("reports").document(reportId)
+
+        val payload = mapOf(
+            "postId" to draft.clientPostId,
+            "reporterUid" to reporterUid,
+            "reason" to "SPAM",
+            "description" to "Tin đăng trùng lặp nhiều lần",
+            "status" to "PENDING",
+            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+        )
+        reportRef.set(payload).await()
+
+        val savedSnap = reportRef.get(Source.SERVER).await()
+        assertTrue(savedSnap.exists())
+        assertEquals(draft.clientPostId, savedSnap.getString("postId"))
+        assertEquals(reporterUid, savedSnap.getString("reporterUid"))
+        assertEquals("SPAM", savedSnap.getString("reason"))
+        assertEquals("PENDING", savedSnap.getString("status"))
+
+        // Duplicate report submission must be rejected by Firestore Security Rules
+        val dupError = failure { reportRef.set(payload).await() }
+        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, (dupError as FirebaseFirestoreException).code)
+    }
 }

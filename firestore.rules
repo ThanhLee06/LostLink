@@ -573,7 +573,48 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // ─── reports ─────────────────────────────────────────────────────────────
+    // ─── reports (ST48: deterministic ID, identity binding & anti-duplicate) ─
+
+    function isValidReportReason(reason) {
+      return reason is string
+        && reason in ['INAPPROPRIATE', 'WRONG_INFO', 'SPAM', 'OTHER'];
+    }
+
+    function isValidReportDescription(d) {
+      return !('description' in d)
+        || d.description == null
+        || (d.description is string && d.description.size() <= 500);
+    }
+
+    function isValidReportTargetPost(postId) {
+      let postPath = /databases/$(database)/documents/posts/$(postId);
+      let tombPath = /databases/$(database)/documents/post_tombstones/$(postId);
+      return !exists(tombPath)
+        && exists(postPath)
+        && get(postPath).data.moderationStatus == 'VISIBLE'
+        && get(postPath).data.authorId != request.auth.uid;
+    }
+
+    function hasValidClientReportCreate(reportId, d) {
+      let requiredKeys = ['postId', 'reporterUid', 'reason', 'status', 'createdAt'];
+      let allowedKeys = ['postId', 'reporterUid', 'reason', 'description', 'status', 'createdAt'];
+      return !('publicNote' in d)
+        && d.keys().hasAll(requiredKeys)
+        && d.keys().hasOnly(allowedKeys)
+        && d.postId is string
+        && d.postId.trim().size() >= 1
+        && d.postId.size() <= 128
+        && d.postId == d.postId.trim()
+        && d.reporterUid is string
+        && d.reporterUid == request.auth.uid
+        && reportId == d.postId + '_' + request.auth.uid
+        && d.status is string
+        && d.status == 'PENDING'
+        && d.createdAt == request.time
+        && isValidReportReason(d.reason)
+        && isValidReportDescription(d)
+        && isValidReportTargetPost(d.postId);
+    }
 
     match /reports/{reportId} {
       // Allow verified students to check whether their own report doc exists when absent (resource == null)
@@ -587,21 +628,9 @@ service cloud.firestore {
 
       allow create: if isVerifiedStudent()
         && isAccountActive()
-        && !('publicNote' in request.resource.data)
-        && request.resource.data.keys().hasAll(['postId', 'reporterUid', 'reason', 'status', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['postId', 'reporterUid', 'reason', 'description', 'status', 'createdAt'])
-        && request.resource.data.postId is string
-        && request.resource.data.postId.size() >= 1
-        && request.resource.data.reporterUid == request.auth.uid
-        && reportId == request.resource.data.postId + '_' + request.auth.uid
-        && request.resource.data.status == 'PENDING'
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.reason in ['INAPPROPRIATE', 'WRONG_INFO', 'SPAM', 'OTHER']
-        && (!('description' in request.resource.data) || request.resource.data.description == null || (request.resource.data.description is string && request.resource.data.description.size() <= 500))
-        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
-        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.moderationStatus == 'VISIBLE'
-        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId != request.auth.uid;
+        && hasValidClientReportCreate(reportId, request.resource.data);
 
+      // ST48: Client is strictly forbidden from updating, overwriting, or deleting any report
       allow update, delete: if false;
     }
 

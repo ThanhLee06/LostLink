@@ -217,20 +217,23 @@ fun ProfileScreen(
                 items(state.filteredPosts, key = { "user_post:${it.id}" }) { post ->
                     MyPostCard(
                         post = post,
+                        moderationReason = state.moderationReasons[post.id],
                         onClick = { onPost(post.id) },
                         onEditClick = { if (!post.isHidden) onEditPost?.invoke(post) },
                         onToggleStatus = {
-                            val isResolved = post.status.equals("RESOLVED", ignoreCase = true) ||
-                                    post.status.equals("CLOSED", ignoreCase = true)
-                            if (isResolved) {
-                                viewModel.markStatus(post, "OPEN") { result ->
-                                    if (result.isSuccess) onPostChanged?.invoke(post.id, "OPEN")
+                            if (!post.isHidden) {
+                                val isResolved = post.status.equals("RESOLVED", ignoreCase = true) ||
+                                        post.status.equals("CLOSED", ignoreCase = true)
+                                if (isResolved) {
+                                    viewModel.markStatus(post, "OPEN") { result ->
+                                        if (result.isSuccess) onPostChanged?.invoke(post.id, "OPEN")
+                                    }
+                                } else {
+                                    postToResolve = post
                                 }
-                            } else {
-                                postToResolve = post
                             }
                         },
-                        onCloseClick = { postToClose = post },
+                        onCloseClick = { if (!post.isHidden) postToClose = post },
                         onDeleteClick = { postToDelete = post }
                     )
                 }

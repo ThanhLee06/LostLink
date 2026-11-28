@@ -54,6 +54,25 @@ class MyPostsViewModel(
                     _state.update {
                         it.copy(loading = false, posts = list, error = null)
                     }
+                    val hiddenIds = list.filter { it.isHidden }.map { it.id }
+                    if (hiddenIds.isNotEmpty()) {
+                        viewModelScope.launch {
+                            val fetched = mutableMapOf<String, String>()
+                            for (postId in hiddenIds) {
+                                val reason = runCatching {
+                                    repository.readModerationReason(authorId, postId)
+                                }.getOrNull()?.trim()
+                                if (!reason.isNullOrEmpty()) {
+                                    fetched[postId] = reason
+                                }
+                            }
+                            if (version == generation && fetched.isNotEmpty()) {
+                                _state.update { current ->
+                                    current.copy(moderationReasons = current.moderationReasons + fetched)
+                                }
+                            }
+                        }
+                    }
                 }
         }
     }
@@ -66,8 +85,17 @@ class MyPostsViewModel(
 
     fun retry() { if (!_state.value.actionLoading) bindUser(currentAuthorId, force = true) }
 
-    fun markStatus(post: HomePost, newStatus: String, onDone: (() -> Unit)? = null) = mutate(
-        { repository.updatePostStatus(post.id, newStatus) }, "Đã cập nhật trạng thái.", onDone)
+    fun markStatus(post: HomePost, newStatus: String, onDone: (() -> Unit)? = null) {
+        if (post.isHidden) {
+            _state.update {
+                it.copy(
+                    userMessage = "Bài đăng đang bị ẩn bởi quản trị viên nên không thể tự khôi phục hoặc đổi trạng thái."
+                )
+            }
+            return
+        }
+        mutate({ repository.updatePostStatus(post.id, newStatus) }, "Đã cập nhật trạng thái.", onDone)
+    }
 
     fun deletePost(postId: String, onDone: (() -> Unit)? = null) = mutate(
         { repository.deletePost(postId) }, "Đã xóa bài đăng.", onDone)

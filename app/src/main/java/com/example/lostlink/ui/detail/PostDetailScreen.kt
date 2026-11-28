@@ -385,57 +385,110 @@ private fun DetailReportSection(
             border = BorderStroke(1.dp, colors.outlineVariant),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
+            val reportInfo = state.reportInfo
+            val statusLabel = reportInfo?.statusBadgeText ?: "Đang chờ duyệt"
+            val isProcessed = reportInfo?.status?.isProcessed == true
+            Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        text = if (state.isReported) "Bạn đã báo cáo bài viết này" else "Phát hiện nội dung bất thường?",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = colors.onSurface,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = if (state.isReported) {
-                            "Báo cáo của bạn đã được ghi nhận và đang chờ quản trị viên xem xét."
-                        } else {
-                            "Báo cáo cho quản trị viên nếu bài viết vi phạm quy định hoặc sai sự thật."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = if (state.isReported) "Bạn đã báo cáo bài viết này" else "Phát hiện nội dung bất thường?",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.onSurface,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (state.isReported) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isProcessed) colors.primaryContainer else Color(0xFFFFF3E0),
+                                    modifier = Modifier.testTag("report-status-badge"),
+                                ) {
+                                    Text(
+                                        text = statusLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isProcessed) colors.onPrimaryContainer else Color(0xFFE65100),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = when {
+                                !state.isReported ->
+                                    "Báo cáo cho quản trị viên nếu bài viết vi phạm quy định hoặc sai sự thật."
+                                isProcessed ->
+                                    "Quản trị viên đã hoàn tất xử lý báo cáo của bạn ($statusLabel)."
+                                else ->
+                                    "Báo cáo của bạn đã được lưu vào hàng chờ và đang chờ quản trị viên xét duyệt."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenReport,
+                        enabled = !state.isReportPending,
+                        shape = HomeTokens.ImageShape,
+                        border = BorderStroke(
+                            1.dp,
+                            if (state.isReported) colors.outlineVariant else colors.error.copy(alpha = 0.6f),
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = if (state.isReported) colors.onSurfaceVariant else colors.error,
+                        ),
+                        modifier = Modifier
+                            .heightIn(min = 42.dp)
+                            .testTag("btn-report-post"),
+                    ) {
+                        Icon(
+                            imageVector = if (state.isReported) Icons.Rounded.Flag else Icons.Outlined.Flag,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (state.isReported) "Đã báo cáo" else "Báo cáo bài viết",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
 
-                OutlinedButton(
-                    onClick = onOpenReport,
-                    enabled = !state.isReportPending,
-                    shape = HomeTokens.ImageShape,
-                    border = BorderStroke(
-                        1.dp,
-                        if (state.isReported) colors.outlineVariant else colors.error.copy(alpha = 0.6f),
-                    ),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = if (state.isReported) colors.onSurfaceVariant else colors.error,
-                    ),
-                    modifier = Modifier
-                        .heightIn(min = 42.dp)
-                        .testTag("btn-report-post"),
-                ) {
-                    Icon(
-                        imageVector = if (state.isReported) Icons.Rounded.Flag else Icons.Outlined.Flag,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = if (state.isReported) "Đã báo cáo" else "Báo cáo bài viết",
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                if (state.isReported && (reportInfo?.reason != null || !reportInfo?.publicNote.isNullOrBlank())) {
+                    HorizontalDivider(color = colors.outlineVariant.copy(alpha = 0.6f))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        reportInfo?.reason?.let { r ->
+                            Text(
+                                text = "Lý do đã gửi: ${r.label}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                        if (!reportInfo?.publicNote.isNullOrBlank()) {
+                            Text(
+                                text = "Phản hồi từ Quản trị viên: ${reportInfo?.publicNote}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.primary,
+                                modifier = Modifier.testTag("report-admin-note"),
+                            )
+                        }
+                    }
                 }
             }
         }
