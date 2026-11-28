@@ -31,6 +31,7 @@ from app.worker.handlers.media_cleanup_handler import (
     _query_abandoned_or_pending_media_ids,
     handle_media_cleanup_job,
 )
+from app.worker.handlers.search_index_handler import handle_search_job
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +48,9 @@ def reset_worker_scheduler_for_tests() -> None:
 
 JobHandler = Callable[[FirestoreClient, str, Dict[str, Any], str], Awaitable[str]]
 
-# searchJob is deferred to ST32; notifyJob is intentionally disabled (None) until Task 12.
+# notifyJob tạm tắt cho tới khi triển khai thông báo.
 DEFAULT_HANDLERS: Dict[str, Optional[JobHandler]] = {
-    "searchJob": None,
+    "searchJob": handle_search_job,
     "notifyJob": None,
     "mediaCleanupJob": handle_media_cleanup_job,
 }

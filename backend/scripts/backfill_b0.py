@@ -9,6 +9,7 @@ Usage (from project root or backend/):
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,9 @@ if str(_BACKEND_DIR) not in sys.path:
 from app.core.config import get_settings  # noqa: E402
 from app.core.firebase import get_firestore, init_firebase  # noqa: E402
 from app.services.migration_service import BackfillSummary, run_backfill  # noqa: E402
+from app.services.vector_index_service import cleanup_orphan_embeddings  # noqa: E402
+from app.worker.handlers.search_index_handler import handle_search_job  # noqa: E402
+from app.worker.runner import drain_until_idle  # noqa: E402
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -54,6 +58,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Enqueue idempotent BACKFILL searchJob events without bumping posts.version.",
+    )
+    parser.add_argument(
+        "--drain-search",
+        action="store_true",
+        default=False,
+        help="Chạy worker đồng bộ toàn bộ searchJob và dọn vector mồ côi sau khi backfill.",
     )
     parser.add_argument(
         "--batch-limit",
@@ -145,6 +155,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         run_id=args.run_id,
     )
     print(format_summary(summary))
+    if args.apply and args.drain_search:
+        processed = asyncio.run(
+            drain_until_idle(
+                db,
+                max_batches=100,
+                handlers={"searchJob": handle_search_job},
+                include_media_sweep=False,
+            )
+        )
+        orphans = cleanup_orphan_embeddings(db)
+        print(f"searchJobsProcessed:      {processed}")
+        print(f"orphanVectorsDeleted:     {orphans}")
     return 0
 
 

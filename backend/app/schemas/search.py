@@ -115,7 +115,7 @@ class SearchResponse(StrictCamelModel):
     items: List[SearchItem] = Field(default_factory=list)
     has_more: bool = False
     next_cursor: Optional[str] = None
-    search_mode: Literal["KEYWORD"] = "KEYWORD"
+    search_mode: Literal["KEYWORD", "HYBRID"] = "KEYWORD"
 
     @model_validator(mode="after")
     def _validate_continuation_invariant(self) -> "SearchResponse":

@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
+import math
 import threading
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 import uuid
 
 from google.api_core import exceptions as api_exceptions
 from google.cloud import firestore as _fs
+from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
 import pytest
 
 from app.core.config import Settings, get_settings
@@ -121,12 +123,14 @@ class FakeQuery:
         orders: Optional[List[Tuple[str, bool]]] = None,
         limit_val: Optional[int] = None,
         start_after_cursor: Any = None,
+        vector_search: Optional[Tuple[str, List[float], int, DistanceMeasure, Optional[str], Optional[float]]] = None,
     ) -> None:
         self._collection = collection
         self._filters: List[Tuple[str, str, Any]] = list(filters or [])
         self._orders: List[Tuple[str, bool]] = list(orders or [])
         self._limit = limit_val
         self._start_after = start_after_cursor
+        self._vector_search = vector_search
 
     def where(
         self,
@@ -150,6 +154,7 @@ class FakeQuery:
             orders=self._orders,
             limit_val=self._limit,
             start_after_cursor=self._start_after,
+            vector_search=self._vector_search,
         )
 
     def order_by(self, field_path: str, direction: str = "ASCENDING") -> "FakeQuery":
@@ -160,6 +165,7 @@ class FakeQuery:
             orders=[*self._orders, (field_path, descending)],
             limit_val=self._limit,
             start_after_cursor=self._start_after,
+            vector_search=self._vector_search,
         )
 
     def limit(self, count: int) -> "FakeQuery":
@@ -169,6 +175,7 @@ class FakeQuery:
             orders=self._orders,
             limit_val=count,
             start_after_cursor=self._start_after,
+            vector_search=self._vector_search,
         )
 
     def start_after(self, cursor: Any) -> "FakeQuery":
@@ -178,7 +185,42 @@ class FakeQuery:
             orders=self._orders,
             limit_val=self._limit,
             start_after_cursor=cursor,
+            vector_search=self._vector_search,
         )
+
+    def find_nearest(
+        self,
+        vector_field: str,
+        query_vector: Any,
+        limit: int,
+        distance_measure: DistanceMeasure,
+        *,
+        distance_result_field: Optional[str] = None,
+        distance_threshold: Optional[float] = None,
+    ) -> "FakeQuery":
+        raw = getattr(query_vector, "_value", query_vector)
+        q_vec = [float(x) for x in raw]
+        return FakeQuery(
+            self._collection,
+            filters=self._filters,
+            orders=self._orders,
+            limit_val=self._limit,
+            start_after_cursor=self._start_after,
+            vector_search=(vector_field, q_vec, limit, distance_measure, distance_result_field, distance_threshold),
+        )
+
+    @staticmethod
+    def _vector_distance(a: List[float], b: List[float], measure: DistanceMeasure) -> float:
+        if len(a) != len(b):
+            return float("inf")
+        dot = sum(x * y for x, y in zip(a, b))
+        if measure == DistanceMeasure.COSINE:
+            na = math.sqrt(sum(x * x for x in a))
+            nb = math.sqrt(sum(y * y for y in b))
+            return 1.0 - (dot / (na * nb)) if na > 0 and nb > 0 else 1.0
+        if measure == DistanceMeasure.EUCLIDEAN:
+            return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+        return -dot
 
     @staticmethod
     def _matches_filter(doc_data: Dict[str, Any], field_path: str, op: str, expected: Any) -> bool:
@@ -260,7 +302,7 @@ class FakeQuery:
             return item_id > cursor_id
         return False
 
-    def stream(self) -> Iterator[FakeDocumentSnapshot]:
+    def stream(self, timeout: Optional[float] = None, retry: Any = None) -> Iterator[FakeDocumentSnapshot]:
         items = self._collection._client._snapshot_collection(self._collection._name)
         matched: List[Tuple[str, Dict[str, Any]]] = []
         for doc_id, data in items:
@@ -296,7 +338,23 @@ class FakeQuery:
                 if self._is_after_cursor(doc_id, data)
             ]
 
-        if self._limit is not None:
+        if self._vector_search is not None:
+            v_field, q_vec, v_limit, measure, dist_field, threshold = self._vector_search
+            scored: List[Tuple[float, str, Dict[str, Any]]] = []
+            for doc_id, data in matched:
+                found, raw_vec = _get_by_path(data, v_field)
+                if not found or raw_vec is None:
+                    continue
+                d_vec = [float(x) for x in getattr(raw_vec, "_value", raw_vec)]
+                dist = self._vector_distance(q_vec, d_vec, measure)
+                if threshold is not None and dist > threshold:
+                    continue
+                if dist_field:
+                    data[dist_field] = dist
+                scored.append((dist, doc_id, data))
+            scored.sort(key=lambda item: (item[0], item[1]))
+            matched = [(doc_id, data) for _, doc_id, data in scored[:v_limit]]
+        elif self._limit is not None:
             matched = matched[: self._limit]
 
         snaps = [
@@ -323,7 +381,12 @@ class FakeDocumentReference:
     def path(self) -> str:
         return f"{self._collection_name}/{self.id}"
 
-    def get(self, transaction: Optional["FakeTransaction"] = None) -> FakeDocumentSnapshot:
+    def get(
+        self,
+        transaction: Optional["FakeTransaction"] = None,
+        timeout: Optional[float] = None,
+        retry: Any = None,
+    ) -> FakeDocumentSnapshot:
         if transaction is not None:
             return transaction._get(self)
         data = self._client._raw_get(self._collection_name, self.id)
@@ -412,6 +475,14 @@ class FakeFirestoreClient:
 
     def collection(self, collection_path: str) -> FakeCollectionReference:
         return FakeCollectionReference(self, collection_path)
+
+    def get_all(
+        self,
+        references: Iterable[FakeDocumentReference],
+        timeout: Optional[float] = None,
+        retry: Any = None,
+    ) -> List[FakeDocumentSnapshot]:
+        return [ref.get() for ref in references]
 
     def transaction(self, max_attempts: int = 5) -> FakeTransaction:
         return FakeTransaction(self, max_attempts=max_attempts)

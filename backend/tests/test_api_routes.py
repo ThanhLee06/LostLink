@@ -155,7 +155,9 @@ def test_events_wake_auth_rate_limit_and_ignores_forged_payload(
         json={"eventId": "forged-ev", "authorId": "attacker", "forceDone": True},
     )
     assert r1.status_code == 200
-    assert r1.json()["processed"] == 1  # mediaCleanupJob (DONE), searchJob deferred to ST32
+    assert r1.json()["processed"] == 2  # searchJob + mediaCleanupJob đều đã kích hoạt
+    ev_after = fake_db.collection("post_events").document("p-wake-1_v1").get().to_dict()
+    assert ev_after is not None and ev_after["searchJob"]["status"] == "DONE"
     assert fake_db.collection("post_events").document("forged-ev").get().exists is False
 
     r2 = client.post(
