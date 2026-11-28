@@ -252,7 +252,10 @@ fun HomeRoute(
                                 resetSearchRequest = resetSearchRequest,
                                 onSearchActive = { active ->
                                     if (active) selected = 1
-                                }
+                                },
+                                onSearchCriteriaChanged = model::updateSearchCriteria,
+                                onSearchRetry = model::retrySearch,
+                                onSearchMore = model::loadMoreSearch,
                             )
                         }
                     }

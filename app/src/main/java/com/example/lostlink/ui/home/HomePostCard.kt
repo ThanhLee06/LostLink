@@ -92,6 +92,19 @@ internal fun TypeBadge(post: HomePost, modifier: Modifier = Modifier, detail: Bo
                     style = MaterialTheme.typography.labelMedium
                 )
             }
+        } else if (post.isActive) {
+            Surface(
+                modifier = Modifier.testTag("badge-open"),
+                color = colors.surfaceVariant,
+                contentColor = colors.onSurfaceVariant,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = "Đang mở",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
         } else if (post.isResolved) {
             Surface(
                 modifier = Modifier.testTag("badge-resolved"),

@@ -6,7 +6,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.lostlink.data.BackendApiClient
 import com.example.lostlink.data.FirebaseAccountRepository
+import com.example.lostlink.data.SmartSearchPage
+import com.example.lostlink.data.SmartSearchRequest
+import com.example.lostlink.data.friendlySearchError
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldPath
@@ -14,7 +18,20 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+data class SmartSearchState(
+    val active: Boolean = false,
+    val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val slowLoading: Boolean = false,
+    val posts: List<HomePost> = emptyList(),
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null,
+    val error: String? = null,
+    val searchMode: String = "KEYWORD",
+)
 
 data class HomeState(
     val allowed: Boolean = false,
@@ -22,6 +39,7 @@ data class HomeState(
     val loading: Boolean = false,
     val hasMore: Boolean = false,
     val error: String? = null,
+    val search: SmartSearchState = SmartSearchState(),
 )
 
 internal data class FeedPageResult<D>(
@@ -87,6 +105,8 @@ class HomeViewModel : ViewModel() {
     val accounts = FirebaseAccountRepository()
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
+    private val apiClient = BackendApiClient()
+    internal var searchExecutor: suspend (SmartSearchRequest) -> Result<SmartSearchPage> = { apiClient.searchPosts(it) }
     var state by mutableStateOf(HomeState())
         private set
 
@@ -94,6 +114,10 @@ class HomeViewModel : ViewModel() {
     private var identity: String? = null
     private var session = 0
     private var feedRequest = 0
+    private var searchRequest = 0
+    private var searchJob: Job? = null
+    private var slowHintJob: Job? = null
+    private var lastSearchRequest: SmartSearchRequest? = null
     private var refreshPending = false
     private var closed = false
 
@@ -104,6 +128,8 @@ class HomeViewModel : ViewModel() {
             identity = next
             session++
             feedRequest++
+            cancelSearchJobs()
+            lastSearchRequest = null
             refreshPending = false
             cursor = null
             state = HomeState(allowed = next != null)
@@ -113,10 +139,181 @@ class HomeViewModel : ViewModel() {
 
     init { auth.addIdTokenListener(authListener) }
 
+    private fun cancelSearchJobs() {
+        searchRequest++
+        searchJob?.cancel()
+        searchJob = null
+        slowHintJob?.cancel()
+        slowHintJob = null
+    }
+
+    fun updateSearchCriteria(
+        query: String,
+        filter: HomePostFilter,
+        categories: List<String>,
+        areas: List<String>,
+        timeFilter: HomeTimeFilter,
+        immediate: Boolean = false,
+    ) {
+        if (closed || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return
+        val trimmed = query.trim()
+        val hasCriteria = trimmed.isNotEmpty() || filter != HomePostFilter.ALL ||
+            categories.isNotEmpty() || areas.isNotEmpty() || timeFilter != HomeTimeFilter.ALL
+        if (!hasCriteria) {
+            cancelSearchJobs()
+            lastSearchRequest = null
+            state = state.copy(search = SmartSearchState())
+            return
+        }
+        val req = SmartSearchRequest(
+            query = trimmed,
+            type = filter.takeIf { it != HomePostFilter.ALL }?.name,
+            categoryIds = categories,
+            areaIds = areas,
+            timeFilter = timeFilter.name,
+        )
+        if (!immediate && req == lastSearchRequest && state.search.active) {
+            return
+        }
+        lastSearchRequest = req
+        cancelSearchJobs()
+        val reqVer = searchRequest
+        val accountSession = session
+        // Bật trạng thái loading ngay để giữ bộ lọc và tránh giật UI trong lúc chờ debounce
+        state = state.copy(
+            search = state.search.copy(
+                active = true,
+                loading = true,
+                loadingMore = false,
+                slowLoading = false,
+                error = null,
+            )
+        )
+        searchJob = viewModelScope.launch {
+            if (!immediate && trimmed.isNotEmpty()) delay(350L)
+            executeSearch(req, append = false, reqVer = reqVer, accountSession = accountSession)
+        }
+    }
+
+    fun loadMoreSearch() {
+        val base = lastSearchRequest ?: return
+        val cursorToken = state.search.nextCursor ?: return
+        if (closed || state.search.loading || state.search.loadingMore || !state.search.hasMore) return
+        val req = base.copy(cursor = cursorToken)
+        cancelSearchJobs()
+        val reqVer = searchRequest
+        val accountSession = session
+        state = state.copy(
+            search = state.search.copy(
+                active = true,
+                loading = false,
+                loadingMore = true,
+                slowLoading = false,
+                error = null,
+            )
+        )
+        searchJob = viewModelScope.launch {
+            executeSearch(req, append = true, reqVer = reqVer, accountSession = accountSession)
+        }
+    }
+
+    fun retrySearch() {
+        val req = lastSearchRequest ?: return
+        if (closed || state.search.loading || state.search.loadingMore) return
+        if (state.search.error != null && state.search.posts.isNotEmpty() && state.search.hasMore && state.search.nextCursor != null) {
+            loadMoreSearch()
+            return
+        }
+        cancelSearchJobs()
+        val reqVer = searchRequest
+        val accountSession = session
+        state = state.copy(
+            search = state.search.copy(
+                active = true,
+                loading = true,
+                loadingMore = false,
+                slowLoading = false,
+                error = null,
+            )
+        )
+        searchJob = viewModelScope.launch {
+            executeSearch(req, append = false, reqVer = reqVer, accountSession = accountSession)
+        }
+    }
+
+    private suspend fun executeSearch(req: SmartSearchRequest, append: Boolean, reqVer: Int, accountSession: Int) {
+        slowHintJob?.cancel()
+        slowHintJob = viewModelScope.launch {
+            delay(2500L)
+            if (!closed && reqVer == searchRequest && accountSession == session &&
+                (state.search.loading || state.search.loadingMore)
+            ) {
+                state = state.copy(search = state.search.copy(slowLoading = true))
+            }
+        }
+        val result = searchExecutor(req)
+        slowHintJob?.cancel()
+        if (closed || reqVer != searchRequest || accountSession != session ||
+            !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity
+        ) {
+            return
+        }
+        result.fold(
+            onSuccess = { page ->
+                val merged = if (append) (state.search.posts + page.posts).distinctBy { it.id } else page.posts
+                state = state.copy(
+                    search = SmartSearchState(
+                        active = true,
+                        loading = false,
+                        loadingMore = false,
+                        slowLoading = false,
+                        posts = merged,
+                        hasMore = page.hasMore,
+                        nextCursor = page.nextCursor,
+                        error = null,
+                        searchMode = page.searchMode,
+                    )
+                )
+            },
+            onFailure = { err ->
+                state = state.copy(
+                    search = state.search.copy(
+                        active = true,
+                        loading = false,
+                        loadingMore = false,
+                        slowLoading = false,
+                        posts = if (append) state.search.posts else emptyList(),
+                        hasMore = if (append) state.search.hasMore else false,
+                        nextCursor = if (append) state.search.nextCursor else null,
+                        error = friendlySearchError(err),
+                    )
+                )
+            },
+        )
+    }
+
     fun refreshAfterPostCreated() {
         if (closed || !accounts.isUserLoggedInAndVerified || accounts.currentUserId != identity) return
         refreshPending = true
         refreshIfPending()
+        val req = lastSearchRequest
+        if (state.search.active && req != null) {
+            cancelSearchJobs()
+            val reqVer = searchRequest
+            val accountSession = session
+            state = state.copy(
+                search = state.search.copy(
+                    active = true,
+                    loading = true,
+                    loadingMore = false,
+                    slowLoading = false,
+                    error = null,
+                )
+            )
+            searchJob = viewModelScope.launch {
+                executeSearch(req, append = false, reqVer = reqVer, accountSession = accountSession)
+            }
+        }
     }
 
     fun refreshAfterPostModified(postId: String? = null) {
@@ -126,6 +323,9 @@ class HomeViewModel : ViewModel() {
     fun removeDeletedPost(postId: String) {
         state = state.copy(
             posts = state.posts.filterNot { it.id == postId },
+            search = state.search.copy(
+                posts = state.search.posts.filterNot { it.id == postId },
+            ),
         )
         refreshAfterPostCreated()
     }
@@ -133,9 +333,17 @@ class HomeViewModel : ViewModel() {
     fun removePost(postId: String) = removeDeletedPost(postId)
 
     fun updatePostStatus(postId: String, newStatus: String) {
-        state = state.copy(posts = state.posts.map {
-            if (it.id == postId) it.copy(status = newStatus) else it
-        })
+        val nextSearchPosts = if (newStatus.equals("CLOSED", ignoreCase = true)) {
+            state.search.posts.filterNot { it.id == postId }
+        } else {
+            state.search.posts.map { if (it.id == postId) it.copy(status = newStatus) else it }
+        }
+        state = state.copy(
+            posts = state.posts.map {
+                if (it.id == postId) it.copy(status = newStatus) else it
+            },
+            search = state.search.copy(posts = nextSearchPosts),
+        )
     }
 
     private fun refreshIfPending() {
@@ -194,6 +402,7 @@ class HomeViewModel : ViewModel() {
         closed = true
         refreshPending = false
         feedRequest++
+        cancelSearchJobs()
         auth.removeIdTokenListener(authListener)
     }
 

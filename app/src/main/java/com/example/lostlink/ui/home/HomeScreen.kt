@@ -20,6 +20,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,9 @@ fun HomeScreen(
     resetSearchRequest: Int = 0,
     onSearchActive: (Boolean) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
+    onSearchCriteriaChanged: ((String, HomePostFilter, List<String>, List<String>, HomeTimeFilter, Boolean) -> Unit)? = null,
+    onSearchRetry: (() -> Unit)? = null,
+    onSearchMore: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     var search by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
@@ -76,6 +80,14 @@ fun HomeScreen(
         (if (timeFilter != HomeTimeFilter.ALL) 1 else 0) +
         categories.size + areas.size
     val searching = search.text.isNotBlank() || activeFilterCount > 0
+    val remoteSearch = onSearchCriteriaChanged != null && state.search.active
+    val displayPosts = if (remoteSearch) state.search.posts else visible
+
+    LaunchedEffect(state.allowed, search.text, filter, categories, areas, timeFilter) {
+        if (state.allowed) {
+            onSearchCriteriaChanged?.invoke(search.text, filter, categories, areas, timeFilter, false)
+        }
+    }
 
     // 3. Đặt lại toàn bộ 5 tiêu chí lọc và từ khóa về mặc định chỉ với 1 chạm
     fun resetFilters() {
@@ -215,6 +227,9 @@ fun HomeScreen(
                         keyboardActions = KeyboardActions(onSearch = {
                             keyboard?.hide()
                             focusManager.clearFocus()
+                            if (state.allowed) {
+                                onSearchCriteriaChanged?.invoke(search.text, filter, categories, areas, timeFilter, true)
+                            }
                         }),
                         textStyle = MaterialTheme.typography.bodyLarge,
                         shape = HomeTokens.CardShape,
@@ -229,11 +244,34 @@ fun HomeScreen(
                             focusedPlaceholderColor = colors.onSurfaceVariant
                         ),
                     )
+                    val suggestions = remember(search.text, state.posts, state.search.posts) {
+                        suggestHomeSearchChips(search.text, state.search.posts.ifEmpty { state.posts })
+                    }
+                    if (state.allowed && suggestions.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().testTag("search-suggestions"),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            suggestions.forEach { item ->
+                                SuggestionChip(
+                                    onClick = {
+                                        search = TextFieldValue(item, TextRange(item.length))
+                                        onSearchCriteriaChanged?.invoke(item, filter, categories, areas, timeFilter, true)
+                                    },
+                                    label = { Text(item, style = MaterialTheme.typography.labelMedium) }
+                                )
+                            }
+                        }
+                    }
+                    val modeLabel = if (state.search.searchMode == "HYBRID") "Ngữ nghĩa" else "Từ khóa"
+                    val searchBusy = state.search.loading || state.search.loadingMore
                     Text(
-                        text = if (state.allowed) {
-                            "Phạm vi: ${state.posts.size} tin đã tải${if (state.hasMore) " · Có thể tải thêm" else ""}"
-                        } else {
-                            "Đăng nhập để tìm và xem tin"
+                        text = when {
+                            !state.allowed -> "Đăng nhập để tìm và xem tin"
+                            remoteSearch && searchBusy -> "Đang tìm kiếm thông minh trên máy chủ…"
+                            remoteSearch -> "Tìm kiếm thông minh ($modeLabel) · ${state.search.posts.size} kết quả"
+                            else -> "Phạm vi: ${state.posts.size} tin đã tải${if (state.hasMore) " · Có thể tải thêm" else ""}"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
@@ -244,16 +282,17 @@ fun HomeScreen(
             if (!deferUnavailableActions) item(key = "report") { reportContent() }
             item(key = "heading") {
                 val canResetAll = searching
+                val headingLoading = if (remoteSearch) (state.search.loading || state.search.loadingMore) else state.loading
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FeedHeading(
                         searching = searching,
-                        count = visible.size,
+                        count = displayPosts.size,
                         allowed = state.allowed,
-                        loading = state.loading,
+                        loading = headingLoading,
                         filter = filter,
                         compact = shortWindow,
                         activeFilterCount = activeFilterCount,
-                        onRefresh = ::refresh,
+                        onRefresh = { if (remoteSearch) onSearchRetry?.invoke() else refresh() },
                         onFilter = { filter = it },
                         onResetFilters = if (canResetAll) (::resetFilters) else null
                     )
@@ -261,7 +300,7 @@ fun HomeScreen(
                         categories = categories,
                         areas = areas,
                         enabled = state.allowed,
-                        resultCount = visible.size,
+                        resultCount = displayPosts.size,
                         onCategories = { categories = it },
                         onAreas = { areas = it },
                         onResetAll = if (canResetAll) (::resetFilters) else null
@@ -277,6 +316,69 @@ fun HomeScreen(
                         action = "Đăng nhập",
                         onAction = onSignIn
                     )
+                }
+            } else if (remoteSearch) {
+                if (state.search.loading && !state.search.loadingMore) {
+                    item(key = "search-loading") {
+                        LoadingNotice(
+                            if (state.search.slowLoading) "Máy chủ đang khởi động (cold start), vui lòng đợi thêm giây lát…"
+                            else "Đang tìm kiếm…"
+                        )
+                    }
+                }
+                if (state.search.error != null) {
+                    item(key = "search-error") {
+                        FeedNotice(
+                            title = if (state.search.posts.isEmpty()) "Chưa tìm kiếm được" else "Chưa tải thêm được kết quả",
+                            message = state.search.error,
+                            action = "Thử lại",
+                            onAction = { onSearchRetry?.invoke() },
+                            error = true,
+                            enabled = !state.search.loading && !state.search.loadingMore
+                        )
+                    }
+                }
+                if (!state.search.loading && !state.search.loadingMore && state.search.error == null && state.search.posts.isEmpty()) {
+                    item(key = "search-empty") {
+                        FeedNotice(
+                            title = "Không tìm thấy tin nào phù hợp",
+                            message = "Thử thay đổi từ khóa mô tả hoặc xóa bớt tiêu chí lọc.",
+                            action = "Xóa bộ lọc",
+                            onAction = ::resetFilters
+                        )
+                    }
+                }
+                items(state.search.posts, key = { "search:${it.id}" }, contentType = { "post-card" }) { post ->
+                    HomePostCard(post, if (canOpenPosts) ({ onPost(post.id) }) else null)
+                }
+                if (state.search.hasMore) {
+                    item(key = "search-more") {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (state.search.loadingMore && state.search.slowLoading) {
+                                Text(
+                                    text = "Máy chủ đang phản hồi chậm, vui lòng đợi thêm giây lát…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onSearchMore?.invoke() },
+                                enabled = !state.search.loading && !state.search.loadingMore,
+                                shape = HomeTokens.ImageShape,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("load-more-search")
+                            ) {
+                                if (state.search.loadingMore) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(if (state.search.loadingMore) "Đang tải thêm…" else "Xem thêm kết quả")
+                            }
+                        }
+                    }
                 }
             } else {
                 if (state.loading && state.posts.isEmpty()) {
@@ -493,7 +595,7 @@ private fun FeedHeading(
                 text = if (compact) {
                     "$count tin"
                 } else if (searching) {
-                    "$count kết quả trong tin đã tải"
+                    "$count kết quả phù hợp"
                 } else {
                     "Sắp xếp theo thời điểm đăng"
                 },
