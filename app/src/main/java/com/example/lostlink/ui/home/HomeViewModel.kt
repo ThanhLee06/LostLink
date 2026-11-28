@@ -244,12 +244,15 @@ class HomeViewModel : ViewModel() {
     private suspend fun executeSearch(req: SmartSearchRequest, append: Boolean, reqVer: Int, accountSession: Int) {
         slowHintJob?.cancel()
         slowHintJob = viewModelScope.launch {
-            delay(2500L)
+            delay(5000L)
             if (!closed && reqVer == searchRequest && accountSession == session &&
                 (state.search.loading || state.search.loadingMore)
             ) {
                 state = state.copy(search = state.search.copy(slowLoading = true))
             }
+        }
+        runCatching {
+            Log.d("HomeSearch", "Searching query='${req.query}' baseUrl=${com.example.lostlink.BuildConfig.BACKEND_BASE_URL}")
         }
         val result = searchExecutor(req)
         slowHintJob?.cancel()
@@ -260,6 +263,9 @@ class HomeViewModel : ViewModel() {
         }
         result.fold(
             onSuccess = { page ->
+                runCatching {
+                    Log.d("HomeSearch", "Search success mode=${page.searchMode} count=${page.posts.size}")
+                }
                 val merged = if (append) (state.search.posts + page.posts).distinctBy { it.id } else page.posts
                 state = state.copy(
                     search = SmartSearchState(
@@ -276,6 +282,9 @@ class HomeViewModel : ViewModel() {
                 )
             },
             onFailure = { err ->
+                runCatching {
+                    Log.e("HomeSearch", "Search failed: ${err.javaClass.name}: ${err.message}", err)
+                }
                 state = state.copy(
                     search = state.search.copy(
                         active = true,

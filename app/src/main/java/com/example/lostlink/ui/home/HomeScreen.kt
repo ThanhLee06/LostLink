@@ -1,9 +1,11 @@
 package com.example.lostlink.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
@@ -52,6 +54,7 @@ fun HomeScreen(
     var timeFilter by rememberSaveable { mutableStateOf(HomeTimeFilter.ALL) }
     var categories by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var areas by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
     var searchFocused by remember { mutableStateOf(false) }
     var lastLoadWasMore by rememberSaveable { mutableStateOf(false) }
     var consumedSearchRequest by rememberSaveable { mutableIntStateOf(0) }
@@ -76,9 +79,8 @@ fun HomeScreen(
     }
 
     // 2. Tính toán số lượng bộ lọc đang kích hoạt & trạng thái tìm kiếm/lọc
-    val activeFilterCount = (if (filter != HomePostFilter.ALL) 1 else 0) +
-        (if (timeFilter != HomeTimeFilter.ALL) 1 else 0) +
-        categories.size + areas.size
+    val advancedFilterCount = categories.size + areas.size + (if (timeFilter != HomeTimeFilter.ALL) 1 else 0)
+    val activeFilterCount = (if (filter != HomePostFilter.ALL) 1 else 0) + advancedFilterCount
     val searching = search.text.isNotBlank() || activeFilterCount > 0
     val remoteSearch = onSearchCriteriaChanged != null && state.search.active
     val displayPosts = if (remoteSearch) state.search.posts else visible
@@ -96,6 +98,7 @@ fun HomeScreen(
         timeFilter = HomeTimeFilter.ALL
         categories = emptyList()
         areas = emptyList()
+        filtersExpanded = false
         lastLoadWasMore = false
         focusManager.clearFocus()
         keyboard?.hide()
@@ -248,12 +251,11 @@ fun HomeScreen(
                         suggestHomeSearchChips(search.text, state.search.posts.ifEmpty { state.posts })
                     }
                     if (state.allowed && suggestions.isNotEmpty()) {
-                        FlowRow(
+                        LazyRow(
                             modifier = Modifier.fillMaxWidth().testTag("search-suggestions"),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            suggestions.forEach { item ->
+                            items(suggestions, key = { it }) { item ->
                                 SuggestionChip(
                                     onClick = {
                                         search = TextFieldValue(item, TextRange(item.length))
@@ -266,20 +268,21 @@ fun HomeScreen(
                     }
                     val modeLabel = if (state.search.searchMode == "HYBRID") "Ngữ nghĩa" else "Từ khóa"
                     val searchBusy = state.search.loading || state.search.loadingMore
-                    Text(
-                        text = when {
-                            !state.allowed -> "Đăng nhập để tìm và xem tin"
-                            remoteSearch && searchBusy -> "Đang tìm kiếm thông minh trên máy chủ…"
-                            remoteSearch -> "Tìm kiếm thông minh ($modeLabel) · ${state.search.posts.size} kết quả"
-                            else -> "Phạm vi: ${state.posts.size} tin đã tải${if (state.hasMore) " · Có thể tải thêm" else ""}"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant,
-                        modifier = Modifier.testTag("search-scope")
-                    )
+                    if (!searchBusy) {
+                        Text(
+                            text = when {
+                                !state.allowed -> "Đăng nhập để tìm và xem tin"
+                                remoteSearch -> "Tìm kiếm thông minh ($modeLabel) · ${state.search.posts.size} kết quả"
+                                else -> "Phạm vi: ${state.posts.size} tin đã tải${if (state.hasMore) " · Có thể tải thêm" else ""}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                            modifier = Modifier.testTag("search-scope")
+                        )
+                    }
                 }
             }
-            if (!deferUnavailableActions) item(key = "report") { reportContent() }
+            if (!deferUnavailableActions && !searching) item(key = "report") { reportContent() }
             item(key = "heading") {
                 val canResetAll = searching
                 val headingLoading = if (remoteSearch) (state.search.loading || state.search.loadingMore) else state.loading
@@ -292,20 +295,27 @@ fun HomeScreen(
                         filter = filter,
                         compact = shortWindow,
                         activeFilterCount = activeFilterCount,
+                        advancedFilterCount = advancedFilterCount,
+                        filtersExpanded = filtersExpanded,
+                        onToggleAdvancedFilters = { filtersExpanded = !filtersExpanded },
                         onRefresh = { if (remoteSearch) onSearchRetry?.invoke() else refresh() },
                         onFilter = { filter = it },
                         onResetFilters = if (canResetAll) (::resetFilters) else null
                     )
-                    HomeAdvancedFilters(
-                        categories = categories,
-                        areas = areas,
-                        enabled = state.allowed,
-                        resultCount = displayPosts.size,
-                        onCategories = { categories = it },
-                        onAreas = { areas = it },
-                        onResetAll = if (canResetAll) (::resetFilters) else null
-                    )
-                    HomeTimeFilters(timeFilter, state.allowed) { timeFilter = it }
+                    AnimatedVisibility(visible = !searching || filtersExpanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            HomeAdvancedFilters(
+                                categories = categories,
+                                areas = areas,
+                                enabled = state.allowed,
+                                resultCount = displayPosts.size,
+                                onCategories = { categories = it },
+                                onAreas = { areas = it },
+                                onResetAll = if (canResetAll) (::resetFilters) else null
+                            )
+                            HomeTimeFilters(timeFilter, state.allowed) { timeFilter = it }
+                        }
+                    }
                 }
             }
             if (!state.allowed) {
@@ -553,6 +563,9 @@ private fun FeedHeading(
     filter: HomePostFilter,
     compact: Boolean,
     activeFilterCount: Int = 0,
+    advancedFilterCount: Int = 0,
+    filtersExpanded: Boolean = false,
+    onToggleAdvancedFilters: () -> Unit = {},
     onRefresh: () -> Unit,
     onFilter: (HomePostFilter) -> Unit,
     onResetFilters: (() -> Unit)? = null
@@ -592,7 +605,9 @@ private fun FeedHeading(
                 }
             }
             Text(
-                text = if (compact) {
+                text = if (loading && searching) {
+                    "Đang tìm kiếm…"
+                } else if (compact) {
                     "$count tin"
                 } else if (searching) {
                     "$count kết quả phù hợp"
@@ -608,12 +623,12 @@ private fun FeedHeading(
         modifier = Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        copy()
-        FlowRow(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            Box(Modifier.weight(1f)) { copy() }
             if (onResetFilters != null) {
                 if (compact) {
                     IconButton(
@@ -634,7 +649,7 @@ private fun FeedHeading(
                     ) {
                         LineIcon(HomeIcon.CLOSE, colors.error, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Xóa bộ lọc", color = colors.error)
+                        Text("Xóa", color = colors.error)
                     }
                 }
             }
@@ -658,25 +673,39 @@ private fun FeedHeading(
                         .testTag("refresh-feed")
                 ) {
                     LineIcon(HomeIcon.REFRESH, if (loading) colors.onSurfaceVariant else colors.primary, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Làm mới")
                 }
             }
         }
-        HomeFilters(filter, allowed, onFilter)
+        HomeFilters(
+            filter = filter,
+            enabled = allowed,
+            searching = searching,
+            advancedFilterCount = advancedFilterCount,
+            filtersExpanded = filtersExpanded,
+            onToggleAdvancedFilters = onToggleAdvancedFilters,
+            onFilter = onFilter
+        )
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HomeFilters(filter: HomePostFilter, enabled: Boolean, onFilter: (HomePostFilter) -> Unit) {
+private fun HomeFilters(
+    filter: HomePostFilter,
+    enabled: Boolean,
+    searching: Boolean,
+    advancedFilterCount: Int,
+    filtersExpanded: Boolean,
+    onToggleAdvancedFilters: () -> Unit,
+    onFilter: (HomePostFilter) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
-    FlowRow(
-        modifier = Modifier.selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        HomePostFilter.entries.forEach { candidate ->
+        items(HomePostFilter.entries, key = { it.name }) { candidate ->
             FilterChip(
                 selected = filter == candidate,
                 onClick = { onFilter(candidate) },
@@ -695,6 +724,25 @@ private fun HomeFilters(filter: HomePostFilter, enabled: Boolean, onFilter: (Hom
                     labelColor = colors.onSurfaceVariant
                 )
             )
+        }
+        if (searching) {
+            item(key = "toggle-advanced-filters") {
+                val label = if (advancedFilterCount > 0) "Bộ lọc ($advancedFilterCount)" else "Bộ lọc"
+                FilterChip(
+                    selected = filtersExpanded || advancedFilterCount > 0,
+                    onClick = onToggleAdvancedFilters,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .heightIn(min = HomeTokens.Target)
+                        .testTag("toggle-advanced-filters"),
+                    label = { Text(label, style = MaterialTheme.typography.labelLarge) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = colors.primaryContainer,
+                        selectedLabelColor = colors.onPrimaryContainer,
+                        labelColor = colors.onSurfaceVariant
+                    )
+                )
+            }
         }
     }
 }
