@@ -1,41 +1,33 @@
 {
   "project_info": {
-    "project_number": "1078703584181",
-    "project_id": "lostlinkapp-9fd6e",
-    "storage_bucket": "lostlinkapp-9fd6e.firebasestorage.app"
+    "project_number": "443216988140",
+    "project_id": "lostlink-58ded",
+    "storage_bucket": "lostlink-58ded.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1078703584181:android:d81ba6c08352373fc09ffc",
+        "mobilesdk_app_id": "1:443216988140:android:e193d70198af3e76faa2c9",
         "android_client_info": {
-          "package_name": "com.example.lostlink"
+          "package_name": "com.example.bt1"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1078703584181-odtqgivrf2ocuvg8h44gdv6t10t53d0c.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.lostlink",
-            "certificate_hash": "63f04eac5897e81e2af52dcf343f8c024f927006"
-          }
-        },
-        {
-          "client_id": "1078703584181-dbemvfoumf14leajnq914pgicagfuj2d.apps.googleusercontent.com",
+          "client_id": "443216988140-gmg9une6ikrqifqth0njquknjefcmc9p.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAg-T_xFDgRASYJLAxyCCEsoIq2FiY1_I4"
+          "current_key": "AIzaSyA8yZjAabLLyzc5GCsLEIlBk3W7A6wEJeM"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "1078703584181-dbemvfoumf14leajnq914pgicagfuj2d.apps.googleusercontent.com",
+              "client_id": "443216988140-gmg9une6ikrqifqth0njquknjefcmc9p.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

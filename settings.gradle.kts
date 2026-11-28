@@ -22,5 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LostLink"
+rootProject.name = "Bt1"
 include(":app")
+ 

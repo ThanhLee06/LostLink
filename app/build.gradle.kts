@@ -1,74 +1,27 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
 }
-
-// Keep the project buildable before a team member adds the Firebase Console config.
-if (file("google-services.json").exists()) {
-    apply(plugin = "com.google.gms.google-services")
-}
-
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localProperties.load(localPropertiesFile.inputStream())
-}
-
-val cloudinaryProperties = Properties()
-val cloudinaryPropertiesFile = rootProject.file("cloudinary.properties")
-if (cloudinaryPropertiesFile.exists()) {
-    cloudinaryProperties.load(cloudinaryPropertiesFile.inputStream())
-}
-
-val cloudNameFromLocal = localProperties.getProperty("CLOUDINARY_CLOUD_NAME")?.trim()
-val cloudNameFromShared = cloudinaryProperties.getProperty("CLOUDINARY_CLOUD_NAME")?.trim()
-val cloudinaryCloudName = if (!cloudNameFromLocal.isNullOrEmpty()) cloudNameFromLocal else (cloudNameFromShared ?: "")
-
-val uploadPresetFromLocal = localProperties.getProperty("CLOUDINARY_UPLOAD_PRESET")?.trim()
-val uploadPresetFromShared = cloudinaryProperties.getProperty("CLOUDINARY_UPLOAD_PRESET")?.trim()
-val cloudinaryUploadPreset = if (!uploadPresetFromLocal.isNullOrEmpty()) uploadPresetFromLocal else (uploadPresetFromShared ?: "")
 
 android {
-    namespace = "com.example.lostlink"
-    compileSdk {
-        version = release(37)
-    }
+    namespace = "com.example.bt1"
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.lostlink"
+        applicationId = "com.example.bt1"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        buildConfigField("String", "CLOUDINARY_CLOUD_NAME", "\"$cloudinaryCloudName\"")
-        buildConfigField("String", "CLOUDINARY_UPLOAD_PRESET", "\"$cloudinaryUploadPreset\"")
     }
 
     buildTypes {
-        val rawBackendUrl = localProperties.getProperty("BACKEND_BASE_URL")?.trim().orEmpty()
-        val debugBackendUrl = rawBackendUrl.ifEmpty { "http://10.0.2.2:8000" }
-        val releaseBackendUrl = localProperties.getProperty("BACKEND_BASE_URL_RELEASE")?.trim()
-            ?.takeIf { it.startsWith("https://") }
-            ?: rawBackendUrl.takeIf { it.startsWith("https://") }
-            ?: ""
-
-        debug {
-            buildConfigField("String", "BACKEND_BASE_URL", "\"$debugBackendUrl\"")
-        }
         release {
-            buildConfigField("String", "BACKEND_BASE_URL", "\"$releaseBackendUrl\"")
             optimization {
                 enable = false
-            }
-        }
-        kotlin {
-            compilerOptions {
-                freeCompilerArgs.add("-Xskip-metadata-version-check")
             }
         }
     }
@@ -78,30 +31,34 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 }
 
 dependencies {
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.firestore)
-    implementation(libs.play.services.auth)
-    implementation(libs.coil.compose)
-    implementation(libs.okhttp)
-    implementation(libs.kotlinx.coroutines.play.services)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.material.icons)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation(libs.androidx.navigation.compose)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.config)
+    implementation(libs.firebase.analytics)
+    implementation(libs.play.services.auth)
+
+    // Retrofit & Gson for API integration (Week 4 requirement)
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

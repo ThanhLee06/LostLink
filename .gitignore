@@ -1,57 +1,15 @@
-# Gradle
-.gradle/
-.gradle-user/
-build/
-.kotlin/
-
-# Cấu hình cục bộ (đường dẫn Android SDK, v.v.)
-local.properties
-
-# Tệp log và hệ điều hành
-*.log
-.DS_Store
-
-# Tệp do Android Studio/Android tạo
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ/Android Studio
 *.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Khóa ký ứng dụng
-*.jks
-*.keystore
-
-# Android Profiling
-*.hprof
-
-# Local AI tooling and runtime
-/.ai/
-/AGENTS.md
-
-# Python / Backend virtual env, caches, and secrets
-backend/.venv/
-backend/.env
-*serviceAccountKey*.json
-__pycache__/
-*.py[cod]
-.pytest_cache/
-*.egg-info/
-
-# Node / Firebase Emulator / Rules tests
-node_modules/
-firebase-debug.log
-firebase-debug.*.log
-firestore-debug.log
-firestore-debug.*.log
-ui-debug.log
-ui-debug.*.log
-.firebase/
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
